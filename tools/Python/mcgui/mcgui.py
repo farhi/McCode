@@ -501,6 +501,10 @@ class McGuiAppController():
                 if not os.path.splitext(a)[1] == '.py':
                     if self.state.getInstrumentFile() == '':
                         self.state.loadInstrument(a)
+                        prefix = 'mx'
+                        if mccode_config.configuration["MCCODE"] == "mcstas":
+                            prefix = 'mc'
+                        self.view.mw.setWindowTitle(prefix + 'gui-py: ' + os.path.basename(str(a)))
                         
         # Shouldn't really be necessary, but otherwise App menu is inactive on macOS
         # (was initially put in message/status update mechanism, but that caused other side-effects, see
@@ -952,6 +956,11 @@ class McGuiAppController():
                 self.state.loadInstrument(instr)
                 self.emitter.message("Instrument opened: " + os.path.basename(str(instr)), gui=True)
                 self.emitter.status("Instrument: " + os.path.basename(str(instr)))
+                # set window title
+                prefix = 'mx'
+                if mccode_config.configuration["MCCODE"] == "mcstas":
+                    prefix = 'mc'
+                self.view.mw.setWindowTitle(prefix + 'gui-py: ' + os.path.basename(str(instr)))
     
     def handleMcdoc(self):
         cmd='%sdoc' % mccode_config.get_mccode_prefix()
