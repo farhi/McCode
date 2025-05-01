@@ -663,7 +663,9 @@ class McGuiAppController():
 
             comps = get_compnames(text=open(self.state.getInstrumentFile(), 'rb').read().decode())
             _a, mcplots, mcdisplays, formats = mccode_config.get_options()
+            # create or display the Run Dialog
             fixed_params, new_instr_params, inspect, mcdisplay, autoplotter, Format = self.view.showStartSimDialog(
+                self.state.getInstrumentFile(),
                 instr_params, comps, mcdisplays, mcplots, formats, mccode_config.configuration["NDBUFFERSIZE"])
 
             if Format != None:

@@ -173,9 +173,10 @@ class McView(object):
         if dlg.exec():
             return dlg.selectedFiles()[0]
 
-    def showStartSimDialog(self, params, comps, mcdisplays, mcplots, formats, buffersize):
+    def showStartSimDialog(self, instr, params, comps, mcdisplays, mcplots, formats, buffersize):
         if self.__ssd == None:
             self.__ssd = McStartSimDialog()
+        self.__ssd.ui.gbxGrid.setTitle('Instrument parameters: '+ os.path.basename(str(instr)))
         self.__ssd.createParamsWidgets(params)
         self.__ssd.set_components(comps)
         self.__ssd.set_mcdisplays(mcdisplays)
