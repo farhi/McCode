@@ -1039,12 +1039,12 @@ do { /* while (intersect) Loop over multiple scattering events */
       { /* relate height of detector to the height on DS cone */
         arg = sin(d_phi*DEG2RAD/2)/sin(2*theta);
         /* If full Debye-Scherrer cone is within d_phi, don't focus */
-        if (arg < -1 || arg > 1) alpha = 0;
+        if (arg < -1 || arg > 1) d_phi = alpha = 0;
         /* Otherwise, determine alpha to rotate from scattering plane
          *    into d_phi focusing area */
         else alpha = 2*asin(arg);
       }
-      if (alpha) {
+      if (d_phi && alpha) {
         /* Focusing */
         alpha  = fabs(alpha);
         alpha0 = 0.5*randpm1()*alpha;
@@ -1114,7 +1114,7 @@ do { /* while (intersect) Loop over multiple scattering events */
           /*unpolarized light in - means an effective reduction according to only theta*/
           p *= (1+cos(theta)*cos(theta))*0.5;
         }
-        if (alpha) {
+        if (d_phi && alpha) {
           p *= alpha/PI;
         }
         n_diff++;
