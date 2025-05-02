@@ -180,7 +180,7 @@ SETTING PARAMETERS(
   p_interact=0, 
   target_x = 0, target_y = 0, target_z = 0, focus_r = 0,
   focus_xw=0, focus_yh=0, focus_aw=0, focus_ah=0, int target_index=0,
-  int flag_compton=1, int flag_rayleigh=1, int flag_lorentzian=1,
+  int flag_compton=1, int flag_rayleigh=1, int flag_lorentzian=0,
   escape_ratio=0, escape_energy=1.739,
   pileup_ratio=0,
   int order=1)
@@ -217,99 +217,99 @@ SHARE %{
  * https://github.com/golosio/xrmc src/photon/photon.cpp (c) Bruno Golosio    
  */
   
-/* XRMC_CrossSections: Compute interaction cross sections in [barn/atom]
- * Return total cross section, given Z and E0:
- *   total_xs = XRMC_CrossSections(Z, E0, xs[3]);
- */
-double XRMC_CrossSections(int Z, double E0, double *xs) {
-  int    i_line;
-  
-  if (xs == NULL) return 0;
-  for(i_line=0; i_line<=COMPTON; i_line++) xs[i_line]=0;
-  
-  // loop on possible fluorescence lines
-  for (i_line=0; i_line<XRAYLIB_LINES_MAX; i_line++) { 
-    // cumulative sum of the line cross sections
-    xs[FLUORESCENCE] += CSb_FluorLine(Z, -i_line, E0, NULL); /* XRayLib */
-  }
+  /* XRMC_CrossSections: Compute interaction cross sections in [barn/atom]
+   * Return total cross section, given Z and E0:
+   *   total_xs = XRMC_CrossSections(Z, E0, xs[3]);
+   */
+  double XRMC_CrossSections(int Z, double E0, double *xs) {
+    int    i_line;
+    
+    if (xs == NULL) return 0;
+    for(i_line=0; i_line<=COMPTON; i_line++) xs[i_line]=0;
+    
+    // loop on possible fluorescence lines
+    for (i_line=0; i_line<XRAYLIB_LINES_MAX; i_line++) { 
+      // cumulative sum of the line cross sections
+      xs[FLUORESCENCE] += CSb_FluorLine(Z, -i_line, E0, NULL); /* XRayLib */
+    }
 
-  // coherent and incoherent cross sections
-  xs[RAYLEIGH] = CSb_Rayl( Z, E0, NULL);
-  xs[COMPTON]  = CSb_Compt(Z, E0, NULL);
-  
-  // total interaction cross section, should converge to CSb_Total(Z, E0, NULL)
-  return xs[FLUORESCENCE] + xs[RAYLEIGH] + xs[COMPTON];
-} // XRMC_CrossSections
+    // coherent and incoherent cross sections
+    xs[RAYLEIGH] = CSb_Rayl( Z, E0, NULL);
+    xs[COMPTON]  = CSb_Compt(Z, E0, NULL);
+    
+    // total interaction cross section, should converge to CSb_Total(Z, E0, NULL)
+    return xs[FLUORESCENCE] + xs[RAYLEIGH] + xs[COMPTON];
+  } // XRMC_CrossSections
 
-/* XRMC_SelectFromDistribution: select a random element from a distribution
- *   index = XRMC_SelectFromDistribution(cum_sum[N], N);
- * index is returned within 0 and N-1
- * The x_arr must be a continuously increasing cumulated sum, which last element is the max
- */
-int XRMC_SelectFromDistribution(double x_arr[], int N)
-{
-  if (x_arr == NULL || N <=0) return (0);
-  double x=rand01()*x_arr[N-1];
-  if (x<x_arr[0]) {    // x is smaller than lower limit
-    return 0;
-  }
-  if (x>=x_arr[N-1]) { // x is greater or equal to upper limit
-    return N-1;
-  }
-  int id=0, iu=N-1; // lower and upper index of the subarray to search
-  while (iu-id>1) { // search until the size of the subarray to search is >1
-    int im = (id + iu)/2; // use the midpoint for equal partition
-    // decide which subarray to search
-    if (x>=x_arr[im]) id=im; // change min index to search upper subarray
-    else iu=im; // change max index to search lower subarray
-  }
+  /* XRMC_SelectFromDistribution: select a random element from a distribution
+   *   index = XRMC_SelectFromDistribution(cum_sum[N], N);
+   * index is returned within 0 and N-1
+   * The x_arr must be a continuously increasing cumulated sum, which last element is the max
+   */
+  int XRMC_SelectFromDistribution(double x_arr[], int N)
+  {
+    if (x_arr == NULL || N <=0) return (0);
+    double x=rand01()*x_arr[N-1];
+    if (x<x_arr[0]) {    // x is smaller than lower limit
+      return 0;
+    }
+    if (x>=x_arr[N-1]) { // x is greater or equal to upper limit
+      return N-1;
+    }
+    int id=0, iu=N-1; // lower and upper index of the subarray to search
+    while (iu-id>1) { // search until the size of the subarray to search is >1
+      int im = (id + iu)/2; // use the midpoint for equal partition
+      // decide which subarray to search
+      if (x>=x_arr[im]) id=im; // change min index to search upper subarray
+      else iu=im; // change max index to search lower subarray
+    }
 
-  return id;
-} // XRMC_SelectFromDistribution
+    return id;
+  } // XRMC_SelectFromDistribution
 
-/* XRMC_SelectInteraction: select interaction type Fluo/Compton/Rayleigh
- * Return the interaction type from a random choice within cross sections 'xs'
- *   type = XRMC_SelectInteraction(xs[3], 3);
- * 'xs' is computed with XRMC_CrossSections.
- * type is one of FLUORESCENCE | RAYLEIGH | COMPTON
- */
-int XRMC_SelectInteraction(double *xs, int nb_processes)
-{
-  double sum_xs, cum_xs[5];
-  int    i;
-  
-  if (xs == NULL || nb_processes < 1 || nb_processes > TRANSMISSION) return 0;
-  cum_xs[0]=sum_xs=0;
-  for (i=0; i< nb_processes; i++) {
-    sum_xs += xs[i];
-    cum_xs[i+1]= sum_xs;
-  }
-  return XRMC_SelectFromDistribution(cum_xs, nb_processes+1);
-} // XRMC_SelectInteraction
+  /* XRMC_SelectInteraction: select interaction type Fluo/Compton/Rayleigh
+   * Return the interaction type from a random choice within cross sections 'xs'
+   *   type = XRMC_SelectInteraction(xs[3], 3);
+   * 'xs' is computed with XRMC_CrossSections.
+   * type is one of FLUORESCENCE | RAYLEIGH | COMPTON
+   */
+  int XRMC_SelectInteraction(double *xs, int nb_processes)
+  {
+    double sum_xs, cum_xs[5];
+    int    i;
+    
+    if (xs == NULL || nb_processes < 1) return 0;
+    cum_xs[0]=sum_xs=0;
+    for (i=0; i< nb_processes; i++) {
+      sum_xs += xs[i];
+      cum_xs[i+1]= sum_xs;
+    }
+    return XRMC_SelectFromDistribution(cum_xs, nb_processes+1);
+  } // XRMC_SelectInteraction
 
-/* XRMC_SelectFluorescenceEnergy: select outgoing fluo photon energy, when incoming with 'E0'
- *   Ef = XRMC_SelectFluorescenceEnergy(Z, E0, &dE);
- */
-double XRMC_SelectFluorescenceEnergy(int Z, double E0, double *dE)
-{
-  int i_line;
-  double sum_xs, cum_xs_lines[XRAYLIB_LINES_MAX+1];
+  /* XRMC_SelectFluorescenceEnergy: select outgoing fluo photon energy, when incoming with 'E0'
+   *   Ef = XRMC_SelectFluorescenceEnergy(Z, E0, &dE);
+   */
+  double XRMC_SelectFluorescenceEnergy(int Z, double E0, double *dE)
+  {
+    int i_line;
+    double sum_xs, cum_xs_lines[XRAYLIB_LINES_MAX+1];
 
-  // compute cumulated XS for all fluo lines
-  cum_xs_lines[0] = sum_xs = 0;
-  for (i_line=0; i_line<XRAYLIB_LINES_MAX; i_line++) { // loop on fluorescent lines
-    double xs = CSb_FluorLine(Z, -i_line, E0, NULL); /* XRayLib */
-    // when a line is inactive: E=xs=0
-    sum_xs += xs;
-    cum_xs_lines[i_line+1] = sum_xs; // cumulative sum of their cross sections
-  }
-  // select randomly one of these lines
-  i_line = XRMC_SelectFromDistribution(cum_xs_lines, XRAYLIB_LINES_MAX); // extract a line
-  // get the K shell line width as approximation of fluorescence line width
-  if (dE) *dE = AtomicLevelWidth(Z, K_SHELL, NULL); // keV
+    // compute cumulated XS for all fluo lines
+    cum_xs_lines[0] = sum_xs = 0;
+    for (i_line=0; i_line<XRAYLIB_LINES_MAX; i_line++) { // loop on fluorescent lines
+      double xs = CSb_FluorLine(Z, -i_line, E0, NULL); /* XRayLib */
+      // when a line is inactive: E=xs=0
+      sum_xs += xs;
+      cum_xs_lines[i_line+1] = sum_xs; // cumulative sum of their cross sections
+    }
+    // select randomly one of these lines
+    i_line = XRMC_SelectFromDistribution(cum_xs_lines, XRAYLIB_LINES_MAX); // extract a line
+    // get the K shell line width as approximation of fluorescence line width
+    if (dE) *dE = AtomicLevelWidth(Z, K_SHELL, NULL); // keV
 
-  return LineEnergy(Z, -i_line, NULL); // fluorescent line energy
-} // XRMC_SelectFluorescenceEnergy
+    return LineEnergy(Z, -i_line, NULL); // fluorescent line energy
+  } // XRMC_SelectFluorescenceEnergy
 
   // Function removing spaces from string
   char * removeSpacesFromStr(char *string)
@@ -453,7 +453,6 @@ DECLARE %{
 INITIALIZE %{
 
   /* energies en [keV], angles in [radians], XRL CSb cross sections are in [barn/atom] */
-  double     E0, dE;
   xrl_error *error = NULL;
   int        i;
   
@@ -616,7 +615,7 @@ double ki,pi;
 /* Store Initial photon state */
 k  = ki = sqrt(kx*kx+ky*ky+kz*kz); //  Angs-1
 E  = K2E*k; // keV
-pi = p;      // used to test for multiple fluo weighting and order cutoff
+pi = p;     // used to test for multiple fluo weighting and order cutoff
 
 do { /* while (intersect) Loop over multiple scattering events */
 
@@ -863,7 +862,7 @@ do { /* while (intersect) Loop over multiple scattering events */
         i_Z = XRMC_SelectFromDistribution(cum_xs_Compton,  compound->nElements+1);
         break;
       default:
-        printf("%s: WARNING: process %i unknown. Absorb.\n", NAME_CURRENT_COMP, type);
+        // printf("%s: WARNING: process %i unknown. Absorb.\n", NAME_CURRENT_COMP, type);
         ABSORB;
     }
     Z   = compound->Elements[i_Z];
@@ -943,7 +942,7 @@ do { /* while (intersect) Loop over multiple scattering events */
     /* exit if multiple scattering order has been reached */
     if (!order) break; // skip final absorption
     // stop when order has been reached, or weighting is very low
-    if (order && (event_counter >= order || p/pi < 1e-7)) { force_transmit=1; }
+    if (order && (event_counter >= order || p/pi < 1e-15)) { force_transmit=1; }
  
   } // if intersect (scatter)
 } while(intersect); /* end do (intersect) (multiple scattering loop) */

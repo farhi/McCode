@@ -193,7 +193,7 @@ SETTING PARAMETERS(
   p_interact=0,
   target_x = 0, target_y = 0, target_z = 0, focus_r = 0,
   focus_xw=0, focus_yh=0, focus_aw=0, focus_ah=0, int target_index=0,
-  int flag_compton=1, int flag_rayleigh=1, int flag_lorentzian=1, int flag_powder=1,
+  int flag_compton=1, int flag_rayleigh=1, int flag_lorentzian=0, int flag_powder=1,
   string powder_refl="",
   vector powder_format={0,0,0,0,0,0,0,0}, Vc=0, delta_d_d=0, DW=0,
   d_phi=0, int nb_atoms=1, int barns=1, int tth_sign=0,
@@ -292,7 +292,7 @@ SHARE COPY PowderN EXTEND %{
     double sum_xs, *cum_xs;
     int    i;
 
-    if (xs == NULL || nb_processes < 1 || nb_processes > TRANSMISSION) return 0;
+    if (xs == NULL || nb_processes < 1) return 0;
     cum_xs = malloc((nb_processes+1)*sizeof(double));
     if (!cum_xs)          return 0;
     cum_xs[0]=sum_xs=0;
@@ -474,7 +474,6 @@ DECLARE COPY PowderN EXTEND %{
 INITIALIZE %{
 
   /* energies en [keV], angles in [radians], XRL CSb cross sections are in [barn/atom] */
-  double     E0, dE;
   xrl_error *error = NULL;
   int        i;
 
@@ -959,9 +958,9 @@ do { /* while (intersect) Loop over multiple scattering events */
 
   if (intersect) { /* scattering event */
     int    i_Z=-1, Z, line=-1;
-    double solid_angle;
-    double theta, dsigma, alpha;
-    double Ef, dE;
+    double solid_angle=0;
+    double theta=0, dsigma=0, alpha=0;
+    double Ef=0, dE=0;
     double kf=k, kf_x, kf_y, kf_z;  // next particle direction
 
     /* correct for XS total(photo+Compton+Rayleigh+Powder) > sum(fluo+Compton+Rayleigh+Powder) */
@@ -1110,13 +1109,13 @@ do { /* while (intersect) Loop over multiple scattering events */
         if (Ex!=0 || Ey!=0 || Ez!=0){
           double EE=sqrt(Ex*Ex+Ey*Ey+Ez*Ez);
           double s=scalar_prod(kf_x,kf_y,kf_z,Ex,Ey,Ez)/EE;
-          p*=(1-s)*(1-s);
+          p *= (1-s)*(1-s);
         }else{
           /*unpolarized light in - means an effective reduction according to only theta*/
-          p*=(1+cos(theta)*cos(theta))*0.5;
+          p *= (1+cos(theta)*cos(theta))*0.5;
         }
         if (alpha) {
-          p    *= alpha/PI;
+          p *= alpha/PI;
         }
         n_diff++;
         p_diff += p;
@@ -1151,7 +1150,7 @@ do { /* while (intersect) Loop over multiple scattering events */
     /* exit if multiple scattering order has been reached */
     if (!order) break; // skip final absorption
     // stop when order has been reached, or weighting is very low
-    if (order && (event_counter >= order || p/pi < 1e-7)) { force_transmit=1; }
+    if (order && (event_counter >= order || p/pi < 1e-15)) { force_transmit=1; }
 
   } // if intersect (scatter)
 } while(intersect); /* end do (intersect) (multiple scattering loop) */

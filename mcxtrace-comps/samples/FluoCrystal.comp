@@ -204,7 +204,7 @@ SETTING PARAMETERS(
   p_interact=0,
   target_x = 0, target_y = 0, target_z = 0, focus_r = 0,
   focus_xw=0, focus_yh=0, focus_aw=0, focus_ah=0, int target_index=0,
-  int flag_compton=1, int flag_rayleigh=1, int flag_lorentzian=1,
+  int flag_compton=1, int flag_rayleigh=1, int flag_lorentzian=0,
   string sx_refl="",  int flag_sx=1,
   delta_d_d=1e-3,     int barns=1,
   recip_cell=0,
@@ -309,7 +309,7 @@ SHARE COPY Single_crystal EXTEND %{
     double sum_xs, *cum_xs;
     int    i;
 
-    if (xs == NULL || nb_processes < 1 || nb_processes > TRANSMISSION) return 0;
+    if (xs == NULL || nb_processes < 1) return 0;
     cum_xs = malloc((nb_processes+1)*sizeof(double));
     if (!cum_xs)          return 0;
     cum_xs[0]=sum_xs=0;
@@ -1127,7 +1127,7 @@ do { /* while (intersect) Loop over multiple scattering events */
     /* exit if multiple scattering order has been reached */
     if (!order) break; // skip final absorption
     // stop when order has been reached, or weighting is very low
-    if (order && (event_counter >= order || p/pi < 1e-7)) { force_transmit=1; }
+    if (order && (event_counter >= order || p/pi < 1e-15)) { force_transmit=1; }
 
   } // if intersect (scatter)
 } while(intersect); /* end do (intersect) (multiple scattering loop) */
