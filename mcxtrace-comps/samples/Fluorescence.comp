@@ -116,7 +116,7 @@
 * (...)
 *
 *
-* The computation is made via the XRayLib (apt install libxrl-dev).
+* The computation is made via the XRayLib (apt install libxrl-dev) https://github.com/tschoonj/xraylib.
 *
 * %Parameters
 * material:  [str]    Chemical formulae, e.g. "LaB6", "Pb2SnO4". If may also be a CIF/LAZ/LAU file.
@@ -144,6 +144,7 @@
 * flag_compton:   [1] When 0, the Compton  scattering is ignored.
 * flag_rayleigh:  [1] When 0, the Rayleigh scattering is ignored.
 * flag_lorentzian:[1] When 1, the line shapes are assumed to be Lorentzian, else Gaussian.
+* flag_kissel:    [1] When 1, to handle M-lines XRF from Kissel (else only K and L-lines, but faster).
 * escape_ratio:   [1] Detector escape peak ratio,  e.g. 0.01-0.02. 0 inactivates.
 * escape_energy:[keV] Detector escape peak energy, e.g. 1.739 for Si, 9.886 for Ge.
 * pileup_ratio:   [1] Sum aka time coincidence aka pile-up detector peak ratio, e.g. 0.01-0.02. 0 inactivates.
@@ -153,7 +154,7 @@
 * type: scattering event type 0=FLUORESCENCE fluorescence, 1=RAYLEIGH Rayleigh, 2=COMPTON Compton, 3=TRANSMISSION Transmit (absorbsion), 4=DIFFRACTION Diffraction (not handled here), 5=FLUORESCENCE_ESCAPE Detector escape peak, 6=FLUORESCENCE_PILEUP Detector pile-up/sum/coincidence peak
 *
 * %Link
-* The XRayLib https://github.com/tschoonj/xraylib
+* The XRayLib https://github.com/tschoonj/xraylib http://dx.doi.org/10.1016/j.sab.2011.09.011
 * %Link
 * Fluorescence https://en.wikipedia.org/wiki/Fluorescence
 * %Link
@@ -181,6 +182,7 @@ SETTING PARAMETERS(
   target_x = 0, target_y = 0, target_z = 0, focus_r = 0,
   focus_xw=0, focus_yh=0, focus_aw=0, focus_ah=0, int target_index=0,
   int flag_compton=1, int flag_rayleigh=1, int flag_lorentzian=0,
+  int flag_kissel=0,
   escape_ratio=0, escape_energy=1.739,
   pileup_ratio=0,
   int order=1)
@@ -206,6 +208,7 @@ SHARE %{
   #define TRANSMISSION 4
   #define FLUORESCENCE_ESCAPE 5 // Detector escape      peak fluorescence
   #define FLUORESCENCE_PILEUP 6 // Detector pile-up/sum peak fluorescence
+
   #include <xraylib/xraylib.h>
   
 /* See XrayLib code (c) T. Schoonjans
@@ -218,10 +221,11 @@ SHARE %{
  */
   
   /* XRMC_CrossSections: Compute interaction cross sections in [barn/atom]
+   * When kissel=1, M-lines are computed, but computation is 10x slower.
    * Return total cross section, given Z and E0:
-   *   total_xs = XRMC_CrossSections(Z, E0, xs[3]);
+   *   total_xs = XRMC_CrossSections(Z, E0, xs[3], flag_kissel);
    */
-  double XRMC_CrossSections(int Z, double E0, double *xs) {
+  double XRMC_CrossSections(int Z, double E0, double *xs, int kissel) {
     int    i_line;
     
     if (xs == NULL) return 0;
@@ -230,7 +234,9 @@ SHARE %{
     // loop on possible fluorescence lines
     for (i_line=0; i_line<XRAYLIB_LINES_MAX; i_line++) { 
       // cumulative sum of the line cross sections
-      xs[FLUORESCENCE] += CSb_FluorLine(Z, -i_line, E0, NULL); /* XRayLib */
+      xs[FLUORESCENCE] += kissel ?
+        CSb_FluorLine_Kissel(Z, -i_line, E0, NULL) /* XRayLib lines are negative integers */
+      : CSb_FluorLine(Z, -i_line, E0, NULL);
     }
 
     // coherent and incoherent cross sections
@@ -288,9 +294,10 @@ SHARE %{
   } // XRMC_SelectInteraction
 
   /* XRMC_SelectFluorescenceEnergy: select outgoing fluo photon energy, when incoming with 'E0'
-   *   Ef = XRMC_SelectFluorescenceEnergy(Z, E0, &dE);
+   * When kissel=1, M-lines are included, but computation is 10x slower
+   *   Ef = XRMC_SelectFluorescenceEnergy(Z, E0, &dE, kissel);
    */
-  double XRMC_SelectFluorescenceEnergy(int Z, double E0, double *dE)
+  double XRMC_SelectFluorescenceEnergy(int Z, double E0, double *dE, int kissel)
   {
     int i_line;
     double sum_xs, cum_xs_lines[XRAYLIB_LINES_MAX+1];
@@ -298,7 +305,9 @@ SHARE %{
     // compute cumulated XS for all fluo lines
     cum_xs_lines[0] = sum_xs = 0;
     for (i_line=0; i_line<XRAYLIB_LINES_MAX; i_line++) { // loop on fluorescent lines
-      double xs = CSb_FluorLine(Z, -i_line, E0, NULL); /* XRayLib */
+      double xs = kissel ?
+        CSb_FluorLine_Kissel(Z, -i_line, E0, NULL) /* XRayLib lines are negative integers */
+      : CSb_FluorLine(Z, -i_line, E0, NULL);
       // when a line is inactive: E=xs=0
       sum_xs += xs;
       cum_xs_lines[i_line+1] = sum_xs; // cumulative sum of their cross sections
@@ -478,7 +487,10 @@ INITIALIZE %{
                         "ERROR       Please check parameter values (xwidth, yheight, zdepth, radius).\n", NAME_CURRENT_COMP));
   
   if (!material || !strlen(material) || !strcmp(material, "NULL") || !strcmp(material, "0")) 
-    exit(fprintf(stderr, "Fluorescence: ERROR: %s: Null material specification\n", NAME_CURRENT_COMP));
+    exit(fprintf(stderr, "Fluorescence: ERROR: %s: Null material specification.\n", NAME_CURRENT_COMP));
+
+  if (order > 1 && flag_lorentzian)
+    fprintf(stderr, "Fluorescence: WARNING: %s: Using flag_lorentzian=1 Lorentzian line-shape with order>1 may create artifacts.\n", NAME_CURRENT_COMP);
     
   // test if the material is given as a file
   char path[1024];
@@ -760,7 +772,7 @@ do { /* while (intersect) Loop over multiple scattering events */
         double xs_Z[3];
 
         // get Fluorescence xs
-        XRMC_CrossSections(Z, E, xs_Z); // [barn/atom]
+        XRMC_CrossSections(Z, E, xs_Z, flag_kissel); // [barn/atom]
         sigma_barn            += frac*CSb_Total(Z, E, NULL); // Photo+Compton+Rayleigh
         cum_xs_fluo[i_Z+1]     = cum_xs_fluo[i_Z]    +frac*xs_Z[FLUORESCENCE];
         cum_xs_Compton[i_Z+1]  = cum_xs_Compton[i_Z] +frac*xs_Z[COMPTON];
@@ -890,7 +902,7 @@ do { /* while (intersect) Loop over multiple scattering events */
       case FLUORESCENCE: /* 0 Fluo: choose line */
         n_fluo++;
         p_fluo += p;
-        Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE);      // dE in keV
+        Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel);      // dE in keV
         if (dE) {
           if (flag_lorentzian) dE  *= tan(PI/2*randpm1()); // Lorentzian distribution
           else                 dE  *= randnorm();          // Gaussian distribution
@@ -926,7 +938,7 @@ do { /* while (intersect) Loop over multiple scattering events */
       // handle detector pile-up peak: get an other fluo line and sum it
       i_Z = XRMC_SelectFromDistribution(cum_xs_fluo,     compound->nElements+1);
       Z   = compound->Elements[i_Z];
-      Ef  = XRMC_SelectFluorescenceEnergy(Z, E, &dE);
+      Ef  = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel);
       kf += Ef*E2K;             // pile-up
       type= FLUORESCENCE_PILEUP;
     }

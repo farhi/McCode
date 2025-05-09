@@ -39,7 +39,7 @@
 * %End
 *******************************************************************************/
 DEFINE INSTRUMENT Test_FluoPowder(E0=15, dE=0.05, L1=10, string material="LaB6.cif",
-    int index=3)
+    int index=3, delta_d_d=3e-4)
 
 USERVARS %{
   int scatt_type; // 3=diff 0=fluo
@@ -79,7 +79,7 @@ SPLIT COMPONENT sample_cradle = Arm()
 AT (0, 0, L1) RELATIVE PREVIOUS
 
 COMPONENT Pow = PowderN(
-    radius=0.5e-6, reflections=material)
+    radius=0.5e-6, reflections=material, delta_d_d=delta_d_d)
 WHEN (index == 1)
 AT (0, 0, 0) RELATIVE sample_cradle
 EXTEND %{
@@ -88,7 +88,7 @@ EXTEND %{
 %}
 
 COMPONENT SX = Single_crystal(
-    radius=0.5e-6, reflections=material,powder=1, mosaic=5)
+    radius=0.5e-6, reflections=material,powder=1, mosaic=5, delta_d_d=delta_d_d)
 WHEN (index == 2)
 AT (0, 0, 0) RELATIVE sample_cradle
 EXTEND %{
@@ -98,7 +98,7 @@ EXTEND %{
 
 COMPONENT FL_pow = FluoPowder(
     radius=0.5e-6, material=material,
-    escape_ratio=0.01, pileup_ratio=0.01)
+    escape_ratio=0.01, pileup_ratio=0.01, delta_d_d=delta_d_d)
 WHEN (index == 3)
 AT (0, 0, 0) RELATIVE sample_cradle
 EXTEND %{
