@@ -9,16 +9,20 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Mo
 
 # Setup McCode values (from mkdist or defaults)
 include(MCUtil)
-setupMCCODE("mcstas")
+if ( BUILD_MCSTAS )
+  setupMCCODE("mcstas")
+elseif ( BUILD_MCXTRACE )
+  setupMCCODE("mcxtrace")
+endif()
 
 # Setup install target
 include(InstallMCCODE)
 installMCCODE()
 
-# Configure doc
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/mcstas.md.in" "${WORK}/mcstas.md" @ONLY)
+# Configure docs
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/mccode.md.in" "${WORK}/${FLAVOR}.md" @ONLY)
 
 install(
-  FILES "${WORK}/mcstas.md"
+  FILES "${WORK}/${FLAVOR}.md"
   DESTINATION "${DEST_DATADIR_DOC}"
-  )
+)
