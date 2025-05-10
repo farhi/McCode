@@ -312,16 +312,20 @@ EXTEND %{
    */
   int XRMC_SelectInteraction(double *xs, int nb_processes)
   {
-    double sum_xs, cum_xs[5];
+    double sum_xs, *cum_xs;
     int    i;
 
     if (xs == NULL || nb_processes < 1) return 0;
+    cum_xs = malloc((nb_processes+1)*sizeof(double));
+    if (!cum_xs)          return 0;
     cum_xs[0]=sum_xs=0;
     for (i=0; i< nb_processes; i++) {
       sum_xs += xs[i];
       cum_xs[i+1]= sum_xs;
     }
-    return XRMC_SelectFromDistribution(cum_xs, nb_processes+1);
+    i = XRMC_SelectFromDistribution(cum_xs, nb_processes+1);
+    free(cum_xs);
+    return i;
   } // XRMC_SelectInteraction
 
   /* XRMC_SelectFluorescenceEnergy: select outgoing fluo photon energy, when incoming with 'E0'
