@@ -1,1 +1,0 @@
-../../mcstas/src/instrument.l

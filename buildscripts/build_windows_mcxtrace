@@ -39,7 +39,7 @@ s
 export MCCODE_USE_LEGACY_DESTINATIONS=ON
 
 # 64-bit
-./mkdist mcxtrace $1 "" "" mingw64 "" -- nsis64
+./mkdist mcxtrace $1 mccode "" mingw64 "" -- nsis64
 ./mkdist mcxtrace-comps $1 mcxtrace-comps-win "" mingw64 "" -- nsis64
 ./mkdist mcxtrace-tools-matlab-mxplot $1 tools/matlab/mcplot/ "" mingw64 "" -- nsis64
 ./mkdist mcxtrace-tools-python-mccodelib $1 tools/Python/mccodelib/ "" mingw64 "" -- nsis64

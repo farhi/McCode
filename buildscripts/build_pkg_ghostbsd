@@ -22,7 +22,7 @@ WORK=`pwd`
 
 export MCINSTALL_PREFIX=/usr/local
 
-./mkdist mcstas ${1} "" "" ghostbsd "" -- pkg
+./mkdist mcstas ${1} mccode "" ghostbsd "" -- pkg
 ./mkdist mcstas-comps ${1} "" "" ghostbsd "" -- pkg
 ./mkdist mcstas-tools-python-mcgui ${1} tools/Python/mcgui/ "" ghostbsd "" -- pkg
 ./mkdist mcstas-tools-python-mcrun ${1} tools/Python/mcrun/ "" ghostbsd "" -- pkg

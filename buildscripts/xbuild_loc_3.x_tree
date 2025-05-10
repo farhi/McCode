@@ -56,7 +56,7 @@ if [[ !  -d $CONDALOCATION ]]; then
     mamba clean --all -y
 fi
 
-./mkdist mcxtrace 3.x-dev "" "" deb64 "" -- justinst
+./mkdist mcxtrace 3.x-dev mccode "" deb64 "" -- justinst
 ./mkdist mcxtrace-comps 3.x-dev "" "" deb64 "" -- justinst
 ./mkdist mcxtrace-tools-python-mxgui 3.x-dev tools/Python/mcgui/ "" deb64 "" -- justinst
 ./mkdist mcxtrace-tools-python-mxrun 3.x-dev tools/Python/mcrun/ "" deb64 "" -- justinst

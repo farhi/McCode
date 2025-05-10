@@ -36,7 +36,7 @@ export MCINSTALL_PREFIX=/usr              # Debian standard /usr/bin and /usr/sh
 export MCCODE_USE_LEGACY_DESTINATIONS=OFF # install in e.g. /usr/share/$FLAVOUR/resources
 export ENABLE_CIF2HKL=OFF                 # cif2hkl is available as a separate package
 
-./mkdist $FLAVOUR                                         $1 "" "" $MCCODE_ARCH "" -- deb
+./mkdist $FLAVOUR                                         $1 mccode "" $MCCODE_ARCH "" -- deb
 ./mkdist $FLAVOUR-comps                                   $1 "" "" $MCCODE_ARCH "" -- deb
 ./mkdist $FLAVOUR-tools-matlab-${P}plot                   $1 tools/matlab/mcplot/ "" $MCCODE_ARCH "" -- deb
 ./mkdist $FLAVOUR-tools-matlab-${P}display                $1 tools/matlab/mcdisplay/ "" $MCCODE_ARCH "" -- deb
