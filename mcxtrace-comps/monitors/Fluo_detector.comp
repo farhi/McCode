@@ -1,0 +1,213 @@
+/*******************************************************************************
+*
+* McXtrace, x-ray tracing package
+*         Copyright, All rights reserved
+*         DTU Physics, Kgs. Lyngby, Denmark
+*         Synchrotron SOLEIL, Saint-Aubin, France
+*
+* Component: Fluo_detector
+*
+* %Identification
+* Written by: E. Farhi
+* Date:       May 2025
+* Origin:     Synchrotron SOLEIL
+*
+* Detector for fluorescence, e.g. Silicon Drift Detector (SDD) or High Purity Germanium (HPGe).
+*
+* %Description
+* A detector that records energy spectrum from e.g. fluorescence.
+* This component also simulates the escape and time coincidence peaks, as well as the
+* detector energy resolution.
+* The detector geometry can be a rectangle xwidth*yheight, or a disk of given 'radius'.
+* When the radius is given negative, a 4PI detector sphere of given radius is assumed.
+*
+* The first process corresponds with a fluorescence excitation within the detector itself
+* that subtracts the K-alpha detector level from the sample scattered energy.
+* The level of escape peaks in set as 'escape_ratio', e.g. 1-2 %.
+*
+* The second process is related to the detector dead-time, within which time coincidence
+* between two fluorescence photons are summed-up.
+* The level of pile-up is set as 'pileup_ratio', e.g. 1-2 % which can increase for high
+* count rates that saturate the detector.
+*
+* Last, the fluorescence peak shape is broadened using an electronic noise (at E=0) and
+* a nominal resolution at E=resolution_energy (in keV). You may set the electronic_noise
+* to zero for a perfect detector (Fano limit). To use a constant resolution, set the
+* resolution_energy=0.
+*
+* Example: Fluo_detector(xwidth=0.1, yheight=0.1,
+*                 Emin=1, Emax=50, nE=20, filename="Output.nrj")
+*
+* %Parameters
+* INPUT PARAMETERS:
+* radius:             [m] Radius of disk detector (in XY plane). When given as negative, a 4PI sphere is assumed.
+* xwidth:             [m] Width  of rectangle detector.
+* yheight:            [m] Height of rectangle detector.
+* escape_ratio:       [1] Detector escape peak ratio,  e.g. 0.01-0.02. Zero inactivates.
+* escape_energy:    [keV] Detector escape peak energy, e.g. 1.739 for Si, 9.886 for Ge.
+* pileup_ratio:       [1] Sum aka time coincidence aka pile-up detector peak ratio, e.g. 0.01-0.02. This is e.g. the dead-time ratio. Zero inactivates.
+* electronic_noise: [keV] Electronic noise at E=0. Use electronic_noise=0 for Fano limit.
+* resolution_energy:[keV] Energy at which resolution is given, e.g. 5.9 keV Mn K-alpha.
+* resolution:       [keV] Resolution FWHM at resolution_energy.
+* flag_lorentzian:    [1] When 1, the line shapes are assumed to be Lorentzian, else Gaussian.
+*
+* %Link
+* Fluorescence https://en.wikipedia.org/wiki/Fluorescence
+*
+* %End
+*******************************************************************************/
+
+DEFINE COMPONENT Fluo_detector
+SETTING PARAMETERS(
+  radius=0, xwidth=0, yheight=0,
+  escape_ratio=0, escape_energy    = 1.739,
+  pileup_ratio=0, electronic_noise = 0.1,
+  resolution_energy= 6, resolution = 0.2,
+  flag_lorentzian=0)
+
+/* X-ray parameters: (x,y,z,kx,ky,kz,phi,t,Ex,Ey,Ez,p) */
+
+SHARE %{
+#ifndef FLUO_DETECTOR
+#define FLUO_DETECTOR
+
+#ifndef FLUORESCENCE
+#define FLUORESCENCE 0
+#endif
+#ifndef FLUORESCENCE_ESCAPE
+#define FLUORESCENCE_ESCAPE 5 // Detector escape      peak fluorescence
+#endif
+#ifndef FLUORESCENCE_PILEUP
+#define FLUORESCENCE_PILEUP 6 // Detector pile-up/sum peak fluorescence
+#endif
+  /* SDD_SelectFromDistribution: select a random element from a distribution
+   *   index = SDD_SelectFromDistribution(cum_sum[N], N);
+   * index is returned within 0 and N-1
+   * The x_arr must be a continuously increasing cumulated sum, which last element is the max
+   */
+  int SDD_SelectFromDistribution(double x_arr[], int N)
+  {
+    if (x_arr == NULL || N <=0) return (0);
+    double x=rand01()*x_arr[N-1];
+    if (x<x_arr[0]) {    // x is smaller than lower limit
+      return 0;
+    }
+    if (x>=x_arr[N-1]) { // x is greater or equal to upper limit
+      return N-1;
+    }
+    int id=0, iu=N-1; // lower and upper index of the subarray to search
+    while (iu-id>1) { // search until the size of the subarray to search is >1
+      int im = (id + iu)/2; // use the midpoint for equal partition
+      // decide which subarray to search
+      if (x>=x_arr[im]) id=im; // change min index to search upper subarray
+      else iu=im; // change max index to search lower subarray
+    }
+
+    return id;
+  } // SDD_SelectFromDistribution
+#endif
+%}
+
+DECLARE %{
+  DArray1d E_N;
+  DArray1d E_p;
+  DArray1d E_p2;
+  int      shape;
+  double   K;
+%}
+
+
+INITIALIZE %{
+
+  shape=-1; /* 0:cyl, 1:box, 2:sphere  */
+
+  if (xwidth && yheight)            shape=1; /* rectangle */
+  else if (radius > 0)              shape=0; /* disk      */
+  else if (radius < 0)              shape=2; /* sphere    */
+  else
+    exit(fprintf(stderr,"Fluo_detector: %s: detector has invalid dimensions.\n"
+                        "ERROR          Please check parameter values (xwidth, yheight, zdepth, radius).\n", NAME_CURRENT_COMP));
+
+  // Use instance name for monitor output if no input was given
+  if (!strcmp(filename,"\0")) sprintf(filename,"%s",NAME_CURRENT_COMP);
+
+  // storage
+  E_N = create_darr1d(nE);
+  E_p = create_darr1d(nE);
+  E_p2= create_darr1d(nE);
+
+  // constant for resolution calculation
+  if (resolution > electronic_noise && resolution_energy > 0)
+    K = (resolution*resolution-electronic_noise*electronic_noise)/resolution_energy;
+  else K=0;
+
+%}
+
+TRACE %{
+  int    intersect=0;       /* flag to continue/stop */
+  double l0,  l1;           /* times for intersections */
+  int    type=-1;
+
+  if (shape==0)       // disk
+    intersect=(x*x + y*y < radius*radius);
+  else if (shape==1)  // rectangle
+    intersect=(-xwidth/2  < x && x < xwidth/2
+            && -yheight/2 < y && y < yheight/2);
+  else if (shape==2)  // sphere
+    intersect=sphere_intersect  (&l0,&l1, x,y,z,kx,ky,kz, radius);
+
+  if (intersect) {  /* we propagate to the detector surface */
+
+    if (shape==2) {
+      if (l0 > 0 && (l0 < l1 || l1 < 0))
+        PROP_DL(l0);
+      else
+        PROP_DL(l1);
+    }
+    else
+      PROP_Z0;
+
+    double k = sqrt(kx*kx + ky*ky + kz*kz);
+    double E = k*K2E;
+    type     = FLUORESCENCE;
+
+    // handle detector escape peak: just shift energy down by detector K-alpha
+    if (escape_ratio > 0 && escape_energy > 0 && E > escape_energy && rand01() < escape_ratio) {
+        E   -= escape_energy; // escape
+        type = FLUORESCENCE_ESCAPE;
+
+    } else if (pileup_ratio > 0 && rand01() < pileup_ratio) {
+        // handle detector pile-up peak: get an other fluo line and sum it
+        int i_E = SDD_SelectFromDistribution(E_p, nE);
+        E  += Emin+i*(Emax-Emin)/nE;             // pile-up
+        type= FLUORESCENCE_PILEUP;
+    }
+
+    // we add the detector resolution (broadening)
+    if (K)
+      dE = sqrt(K*E+electronic_noise*electronic_noise);
+    else if (resolution > 0)
+      dE = resolution;
+    if (flag_lorentzian) dE  *= tan(PI/2*randpm1()); // Lorentzian distribution
+    else                 dE  *= randnorm();          // Gaussian distribution
+    E += dE;
+
+    i = floor((E-Emin)*nE/(Emax-Emin));
+    if(i >= 0 && i < nE)
+    {
+        #pragma acc atomic
+        E_N[i] = E_N[i] + 1;
+        #pragma acc atomic
+        E_p[i] = E_p[i] + p;
+        #pragma acc atomic
+        E_p2[i] = E_p2[i] + p*p;
+        SCATTER;
+    }
+
+    if (restore_xray) {
+        RESTORE_XRAY(INDEX_CURRENT_COMP, x, y, z, kx, ky, kz, phi, t, Ex, Ey, Ez, p);
+    }
+  }
+
+
+%}
