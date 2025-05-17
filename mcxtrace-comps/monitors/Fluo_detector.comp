@@ -43,12 +43,17 @@
 * radius:             [m] Radius of disk detector (in XY plane). When given as negative, a 4PI sphere is assumed.
 * xwidth:             [m] Width  of rectangle detector.
 * yheight:            [m] Height of rectangle detector.
+* Emin:             [keV] Minimum energy to detect.
+* Emax:             [keV] Maximum energy to detect.
+* nE:                 [m] Number of energy channels.
+* filename:         [str] Name of file in which to store the detector image.
+* restore_xray:     [0/1] If set, the monitor does not influence the x-ray state.
 * escape_ratio:       [1] Detector escape peak ratio,  e.g. 0.01-0.02. Zero inactivates.
 * escape_energy:    [keV] Detector escape peak energy, e.g. 1.739 for Si, 9.886 for Ge.
 * pileup_ratio:       [1] Sum aka time coincidence aka pile-up detector peak ratio, e.g. 0.01-0.02. This is e.g. the dead-time ratio. Zero inactivates.
-* electronic_noise: [keV] Electronic noise at E=0. Use electronic_noise=0 for Fano limit.
+* electronic_noise: [keV] Electronic noise at E=0, in keV. Use electronic_noise=0 for Fano limit.
 * resolution_energy:[keV] Energy at which resolution is given, e.g. 5.9 keV Mn K-alpha.
-* resolution:       [keV] Resolution FWHM at resolution_energy.
+* resolution:       [keV] Resolution FWHM in keV at resolution_energy.
 * flag_lorentzian:    [1] When 1, the line shapes are assumed to be Lorentzian, else Gaussian.
 *
 * %Link
@@ -60,8 +65,10 @@
 DEFINE COMPONENT Fluo_detector
 SETTING PARAMETERS(
   radius=0, xwidth=0, yheight=0,
-  escape_ratio=0, escape_energy    = 1.739,
-  pileup_ratio=0, electronic_noise = 0.1,
+  Emin=1, Emax=39, nE=2000, string filename=0,
+  restore_xray=0,
+  escape_ratio=0.01, escape_energy    = 1.739,
+  pileup_ratio=0.01, electronic_noise = 0.1,
   resolution_energy= 6, resolution = 0.2,
   flag_lorentzian=0)
 
@@ -105,6 +112,30 @@ SHARE %{
 
     return id;
   } // SDD_SelectFromDistribution
+
+  /* XRMC_SelectInteraction: select interaction type Fluo/Compton/Rayleigh
+   * Return the interaction type from a random choice within cross sections 'xs'
+   *   type = XRMC_SelectInteraction(xs[3], 3);
+   * 'xs' is computed with XRMC_CrossSections.
+   * type is one of FLUORESCENCE | RAYLEIGH | COMPTON
+   */
+  int SDD_SelectInteraction(double *xs, int nb_processes)
+  {
+    double sum_xs, *cum_xs;
+    int    i;
+
+    if (xs == NULL || nb_processes < 1) return 0;
+    cum_xs = malloc((nb_processes+1)*sizeof(double));
+    if (!cum_xs)          return 0;
+    cum_xs[0]=sum_xs=0;
+    for (i=0; i< nb_processes; i++) {
+      sum_xs += xs[i];
+      cum_xs[i+1]= sum_xs;
+    }
+    i = SDD_SelectFromDistribution(cum_xs, nb_processes+1);
+    free(cum_xs);
+    return i;
+  } // SDD_SelectInteraction
 #endif
 %}
 
@@ -112,8 +143,16 @@ DECLARE %{
   DArray1d E_N;
   DArray1d E_p;
   DArray1d E_p2;
+  DArray1d E_N_pileup;
+  DArray1d E_p_pileup;
+  DArray1d E_p2_pileup;
+  DArray1d E_N_escape;
+  DArray1d E_p_escape;
+  DArray1d E_p2_escape;
   int      shape;
   double   K;
+  double   p_sum;
+  double   N_sum;
 %}
 
 
@@ -132,9 +171,16 @@ INITIALIZE %{
   if (!strcmp(filename,"\0")) sprintf(filename,"%s",NAME_CURRENT_COMP);
 
   // storage
-  E_N = create_darr1d(nE);
-  E_p = create_darr1d(nE);
-  E_p2= create_darr1d(nE);
+  E_N        = create_darr1d(nE);
+  E_p        = create_darr1d(nE);
+  E_p2       = create_darr1d(nE);
+  E_N_pileup = create_darr1d(nE);
+  E_p_pileup = create_darr1d(nE);
+  E_p2_pileup= create_darr1d(nE);
+  E_N_escape = create_darr1d(nE);
+  E_p_escape = create_darr1d(nE);
+  E_p2_escape= create_darr1d(nE);
+  p_sum=N_sum=0;
 
   // constant for resolution calculation
   if (resolution > electronic_noise && resolution_energy > 0)
@@ -157,6 +203,8 @@ TRACE %{
     intersect=sphere_intersect  (&l0,&l1, x,y,z,kx,ky,kz, radius);
 
   if (intersect) {  /* we propagate to the detector surface */
+    int i;
+    double k, E, dE;
 
     if (shape==2) {
       if (l0 > 0 && (l0 < l1 || l1 < 0))
@@ -167,9 +215,9 @@ TRACE %{
     else
       PROP_Z0;
 
-    double k = sqrt(kx*kx + ky*ky + kz*kz);
-    double E = k*K2E;
-    type     = FLUORESCENCE;
+    k     = sqrt(kx*kx + ky*ky + kz*kz);
+    E     = k*K2E;
+    type  = FLUORESCENCE;
 
     // handle detector escape peak: just shift energy down by detector K-alpha
     if (escape_ratio > 0 && escape_energy > 0 && E > escape_energy && rand01() < escape_ratio) {
@@ -178,8 +226,8 @@ TRACE %{
 
     } else if (pileup_ratio > 0 && rand01() < pileup_ratio) {
         // handle detector pile-up peak: get an other fluo line and sum it
-        int i_E = SDD_SelectFromDistribution(E_p, nE);
-        E  += Emin+i*(Emax-Emin)/nE;             // pile-up
+        int i_E = SDD_SelectInteraction(E_p, nE);
+        E  += Emin+i_E*(Emax-Emin)/nE;             // pile-up
         type= FLUORESCENCE_PILEUP;
     }
 
@@ -188,9 +236,12 @@ TRACE %{
       dE = sqrt(K*E+electronic_noise*electronic_noise);
     else if (resolution > 0)
       dE = resolution;
-    if (flag_lorentzian) dE  *= tan(PI/2*randpm1()); // Lorentzian distribution
-    else                 dE  *= randnorm();          // Gaussian distribution
-    E += dE;
+    else dE=0;
+    if (dE) {
+      if (flag_lorentzian) dE  *= tan(PI/2*randpm1()); // Lorentzian distribution
+      else                 dE  *= randnorm();          // Gaussian distribution
+      E += dE;
+    }
 
     i = floor((E-Emin)*nE/(Emax-Emin));
     if(i >= 0 && i < nE)
@@ -201,6 +252,29 @@ TRACE %{
         E_p[i] = E_p[i] + p;
         #pragma acc atomic
         E_p2[i] = E_p2[i] + p*p;
+
+        // special storage
+        if (type == FLUORESCENCE_PILEUP) {
+          #pragma acc atomic
+          E_N_pileup[i] = E_N_pileup[i] + 1;
+          #pragma acc atomic
+          E_p_pileup[i] = E_p_pileup[i] + p;
+          #pragma acc atomic
+          E_p2_pileup[i] = E_p2_pileup[i] + p*p;
+
+        } else if (type == FLUORESCENCE_ESCAPE) {
+          #pragma acc atomic
+          E_N_escape[i] = E_N_escape[i] + 1;
+          #pragma acc atomic
+          E_p_escape[i] = E_p_escape[i] + p;
+          #pragma acc atomic
+          E_p2_escape[i] = E_p2_escape[i] + p*p;
+        }
+
+        #pragma acc atomic
+        N_sum = N_sum +1;
+        #pragma acc atomic
+        p_sum = p_sum +1;
         SCATTER;
     }
 
@@ -209,5 +283,55 @@ TRACE %{
     }
   }
 
-
 %}
+
+SAVE
+%{
+  DETECTOR_OUT_1D(
+    "Energy monitor",
+    "Energy [keV]",
+    "Intensity",
+    "E", Emin, Emax, nE,
+    &E_N[0],&E_p[0],&E_p2[0],
+    filename);
+  if (escape_ratio)
+    {
+      char f_escape[1024];
+      snprintf(f_escape, 1024, "Escape_%s",filename);
+      DETECTOR_OUT_1D(
+      "Energy monitor (escape)",
+      "Energy [keV]",
+      "Intensity (escape)",
+      "E", Emin, Emax, nE,
+      &E_N_escape[0],&E_p_escape[0],&E_p2_escape[0],
+      f_escape);
+    }
+  if (pileup_ratio)
+    {
+      char f_pileup[1024];
+      snprintf(f_pileup, 1024, "PileUp_%s",filename);
+      DETECTOR_OUT_1D(
+      "Energy monitor (pile-up)",
+      "Energy [keV]",
+      "Intensity (pile-up)",
+      "E", Emin, Emax, nE,
+      &E_N_pileup[0],&E_p_pileup[0],&E_p2_pileup[0],
+      f_pileup);
+    }
+%}
+
+DISPLAY %{
+  if (shape ==0) {          // disk
+    circle("xy",0,0,0,radius);
+
+  } else if (shape == 1) {  // rectangle
+    rectangle("xy",0,0,0,xwidth,yheight);
+
+  } else if (shape == 2) {  // sphere
+    circle("xy",0,0,0,fabs(radius));
+    circle("xz",0,0,0,fabs(radius));
+    circle("yz",0,0,0,fabs(radius));
+  }
+%}
+
+END
