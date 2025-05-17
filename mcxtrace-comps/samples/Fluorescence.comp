@@ -284,7 +284,7 @@ SHARE %{
     // select randomly one of these lines
     i_line = XRMC_SelectFromDistribution(cum_xs_lines, XRAYLIB_LINES_MAX); // extract a line
     // get the K shell line width as approximation of fluorescence line width
-    if (dE) *dE = AtomicLevelWidth(Z, K_SHELL, NULL); // keV
+    if (dE) *dE = AtomicLevelWidth(Z, K_SHELL, NULL); // keV, full-width in keV
 
     return LineEnergy(Z, -i_line, NULL); // fluorescent line energy
   } // XRMC_SelectFluorescenceEnergy
@@ -870,8 +870,9 @@ do { /* while (intersect) Loop over multiple scattering events */
       case FLUORESCENCE: /* 0 Fluo: choose line */
         n_fluo++;
         p_fluo += p;
-        Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel);      // dE in keV
+        Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel); // dE full-width in keV
         if (dE) {
+          dE /= 2;  // half-width
           if (flag_lorentzian) dE  *= tan(PI/2*randpm1()); // Lorentzian distribution
           else                 dE  *= randnorm();          // Gaussian distribution
           Ef = Ef + dE;

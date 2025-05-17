@@ -67,8 +67,10 @@ EXTEND %{
 %}
 
 // ideal detectors
-COMPONENT emon_fluo = E_monitor(restore_xray=1,nE=2001,Emin=0, Emax=1.5*E0,
-                                filename="Fluorescence.dat")
+COMPONENT emon_fluo = E_monitor(restore_xray=1,
+  xwidth=0.007, yheight=0.007,
+  nE=2001,Emin=0, Emax=1.5*E0,
+  filename="Fluorescence.dat")
 WHEN (Stype == FLUORESCENCE)
 AT(0,0,0.1) RELATIVE PREVIOUS
 
@@ -85,7 +87,7 @@ COMPONENT emon = Fluo_detector(restore_xray=1,nE=2001,Emin=0, Emax=1.5*E0,
   filename="emon.dat",xwidth=0.007, yheight=0.007)
 AT(0,0,0) RELATIVE PREVIOUS
 
-COMPONENT psd = PSD_monitor(xwidth=0.0015, yheight=0.0015, nx=100, ny=100, filename="psd.dat")
+COMPONENT psd = PSD_monitor(xwidth=0.001, yheight=0.001, nx=100, ny=100, filename="psd.dat")
 AT(0,0,0) RELATIVE PREVIOUS
 
 
