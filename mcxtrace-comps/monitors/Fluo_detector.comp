@@ -54,7 +54,7 @@
 * escape_ratio:       [1] Detector escape peak ratio,  e.g. 0.01-0.02. Zero inactivates.
 * escape_energy:    [keV] Detector escape peak energy, e.g. 1.739 for Si, 9.886 for Ge.
 * pileup_ratio:       [1] Sum aka time coincidence aka pile-up detector peak ratio, e.g. 0.01-0.02. This is e.g. the dead-time ratio. Zero inactivates.
-* electronic_noise: [keV] Electronic noise at E=0, in keV. Use electronic_noise=0 for Fano limit.
+* electronic_noise: [keV] Electronic noise at E=0, FWHM in keV. Use electronic_noise=0 for Fano limit.
 * resolution_energy:[keV] Energy at which resolution is given, e.g. 5.9 keV Mn K-alpha.
 * resolution:       [keV] Resolution FWHM in keV at resolution_energy.
 * flag_lorentzian:    [1] When 1, the line shapes are assumed to be Lorentzian, else Gaussian.
@@ -191,10 +191,15 @@ TRACE %{
   int    type=-1;
 
   if (shape==0)       // disk
-    intersect=(x*x + y*y < radius*radius);
+    {
+      PROP_Z0;
+      intersect=(x*x + y*y < radius*radius);
+    }
   else if (shape==1)  // rectangle
-    intersect=(-xwidth/2  < x && x < xwidth/2
-            && -yheight/2 < y && y < yheight/2);
+    { PROP_Z0;
+      intersect=(-xwidth/2  < x && x < xwidth/2
+              && -yheight/2 < y && y < yheight/2);
+    }
   else if (shape==2)  // sphere
     intersect=sphere_intersect  (&l0,&l1, x,y,z,kx,ky,kz, radius);
 
@@ -208,8 +213,6 @@ TRACE %{
       else
         PROP_DL(l1);
     }
-    else
-      PROP_Z0;
 
     k     = sqrt(kx*kx + ky*ky + kz*kz);
     E     = k*K2E;
@@ -220,8 +223,10 @@ TRACE %{
         E   -= escape_energy; // escape
         type = SDD_ESCAPE;
 
-    } else if (pileup_ratio > 0 && rand01() < pileup_ratio) {
+    }
+    if (pileup_ratio > 0 && N_sum > 1000 && rand01() < pileup_ratio) {
         // handle detector pile-up peak: get an other fluo line and sum it
+        // require some statistics in the spectrum in order to select a line
         int i_E = SDD_SelectInteraction(E_p, nE);
         E  += Emin+i_E*(Emax-Emin)/nE;             // pile-up
         type= SDD_PILEUP;
@@ -236,6 +241,7 @@ TRACE %{
       dE = electronic_noise;
     else dE=0;
     if (dE) {
+      dE /= 2;  // half-width
       if (flag_lorentzian) dE  *= tan(PI/2*randpm1()); // Lorentzian distribution
       else                 dE  *= randnorm();          // Gaussian distribution
       E += dE;
