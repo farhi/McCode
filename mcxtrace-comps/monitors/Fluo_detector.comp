@@ -16,16 +16,19 @@
 *
 * %Description
 * A detector that records energy spectrum from e.g. fluorescence.
-* This component also simulates the escape and time coincidence peaks, as well as the
-* detector energy resolution.
+* This component handles:
+* - fluorescence detector escape  (energy shift from detector K-alpha)
+* - fluorescence detector pile-up (sum aka time-coincidence aka pile-up within detector dead-time)
+* - energy resolution (above Fano level)
+*
 * The detector geometry can be a rectangle xwidth*yheight, or a disk of given 'radius'.
 * When the radius is given negative, a 4PI detector sphere of given radius is assumed.
 *
-* The first process corresponds with a fluorescence excitation within the detector itself
+* The detector escape corresponds with a fluorescence excitation within the detector itself
 * that subtracts the K-alpha detector level from the sample scattered energy.
 * The level of escape peaks in set as 'escape_ratio', e.g. 1-2 %.
 *
-* The second process is related to the detector dead-time, within which time coincidence
+* The detector pile-up is related to the detector dead-time, within which time coincidence
 * between two fluorescence photons are summed-up.
 * The level of pile-up is set as 'pileup_ratio', e.g. 1-2 % which can increase for high
 * count rates that saturate the detector.
@@ -78,15 +81,8 @@ SHARE %{
 #ifndef FLUO_DETECTOR
 #define FLUO_DETECTOR
 
-#ifndef FLUORESCENCE
-#define FLUORESCENCE 0
-#endif
-#ifndef FLUORESCENCE_ESCAPE
-#define FLUORESCENCE_ESCAPE 5 // Detector escape      peak fluorescence
-#endif
-#ifndef FLUORESCENCE_PILEUP
-#define FLUORESCENCE_PILEUP 6 // Detector pile-up/sum peak fluorescence
-#endif
+#define SDD_ESCAPE 5 // Detector escape      peak fluorescence
+#define SDD_PILEUP 6 // Detector pile-up/sum peak fluorescence
   /* SDD_SelectFromDistribution: select a random element from a distribution
    *   index = SDD_SelectFromDistribution(cum_sum[N], N);
    * index is returned within 0 and N-1
@@ -217,18 +213,18 @@ TRACE %{
 
     k     = sqrt(kx*kx + ky*ky + kz*kz);
     E     = k*K2E;
-    type  = FLUORESCENCE;
+    type  = 0;
 
     // handle detector escape peak: just shift energy down by detector K-alpha
     if (escape_ratio > 0 && escape_energy > 0 && E > escape_energy && rand01() < escape_ratio) {
         E   -= escape_energy; // escape
-        type = FLUORESCENCE_ESCAPE;
+        type = SDD_ESCAPE;
 
     } else if (pileup_ratio > 0 && rand01() < pileup_ratio) {
         // handle detector pile-up peak: get an other fluo line and sum it
         int i_E = SDD_SelectInteraction(E_p, nE);
         E  += Emin+i_E*(Emax-Emin)/nE;             // pile-up
-        type= FLUORESCENCE_PILEUP;
+        type= SDD_PILEUP;
     }
 
     // we add the detector resolution (broadening)
@@ -236,6 +232,8 @@ TRACE %{
       dE = sqrt(K*E+electronic_noise*electronic_noise);
     else if (resolution > 0)
       dE = resolution;
+    else if (electronic_noise > 0)
+      dE = electronic_noise;
     else dE=0;
     if (dE) {
       if (flag_lorentzian) dE  *= tan(PI/2*randpm1()); // Lorentzian distribution
@@ -254,7 +252,7 @@ TRACE %{
         E_p2[i] = E_p2[i] + p*p;
 
         // special storage
-        if (type == FLUORESCENCE_PILEUP) {
+        if (type == SDD_PILEUP) {
           #pragma acc atomic
           E_N_pileup[i] = E_N_pileup[i] + 1;
           #pragma acc atomic
@@ -262,7 +260,7 @@ TRACE %{
           #pragma acc atomic
           E_p2_pileup[i] = E_p2_pileup[i] + p*p;
 
-        } else if (type == FLUORESCENCE_ESCAPE) {
+        } else if (type == SDD_ESCAPE) {
           #pragma acc atomic
           E_N_escape[i] = E_N_escape[i] + 1;
           #pragma acc atomic

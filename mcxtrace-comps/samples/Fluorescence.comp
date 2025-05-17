@@ -20,8 +20,6 @@
 * - fluorescence        (excited electrons emit light while falling into lower states)
 * - Compton scattering  (inelastic, transfer some energy to an electron,    incoherent)
 * - Rayleigh scattering (elastic,   dipolar radiation of excitated electrons, coherent)
-* - fluorescence detector escape  (energy shift from detector K-alpha)
-* - fluorescence detector pile-up (sum aka time coincidence aka pile-up in detector)
 *
 * Use the <b>FluoPowder</b> sample component to properly handle powder diffraction with fluorescence.
 *
@@ -90,32 +88,6 @@
 * This sample component can advantageously benefit from the SPLIT feature, e.g.
 * SPLIT COMPONENT sample = Fluorescence(...)
 *
-* <b>Detector artifacts:</b>
-* This component also simulates the escape and time coincidence peaks in a close-by
-* detector (e.g. SDD). The first process corresponds with a fluorescence excitation within
-* the detector that subtracts the K-alpha detector level from the sample scattered energy.
-* The second process is related to the detector dead-time, within which time coincidence
-* between two fluorescence photons are summed-up.
-* If you activate these features, with e.g. 'escape_ratio=0.01' and 'pileup_ratio=0.01', you
-* should further remove these contributions for the rest of the simulation beyond the
-* fluorescence detector, with an ABSORB keyword:
-*
-* USERVARS %{
-*   int fluo_type;
-* %}
-* COMPONENT F = Fluorescence(material="Al", escape_ratio=0.01, pileup_ratio=0.01) AT ...
-* EXTEND %{
-*   if (SCATTERED) fluo_type=type;              // record type of interaction
-* %}
-*
-* COMPONENT E_mon = Monitor_nD(options="energy", ...) AT ...
-* EXTEND %{
-*   if (fluo_type>=FLUORESCENCE_ESCAPE) ABSORB; // remove detector artifacts further
-* %}
-*
-* (...)
-*
-*
 * The computation is made via the XRayLib (apt install libxrl-dev) https://github.com/tschoonj/xraylib.
 *
 * %Parameters
@@ -144,14 +116,11 @@
 * flag_compton:   [1] When 0, the Compton  scattering is ignored.
 * flag_rayleigh:  [1] When 0, the Rayleigh scattering is ignored.
 * flag_lorentzian:[1] When 1, the line shapes are assumed to be Lorentzian, else Gaussian.
-* flag_kissel:    [1] When 1, to handle M-lines XRF from Kissel (else only K and L-lines, but faster).
-* escape_ratio:   [1] Detector escape peak ratio,  e.g. 0.01-0.02. Zero inactivates.
-* escape_energy:[keV] Detector escape peak energy, e.g. 1.739 for Si, 9.886 for Ge.
-* pileup_ratio:   [1] Sum aka time coincidence aka pile-up detector peak ratio, e.g. 0.01-0.02. This is e.g. the dead-time ratio. Zero inactivates.
+* flag_kissel:    [1] When 1 (slower), handle M-lines XRF from Kissel for Z>=52 Te (else only K and L-lines).
 * order:          [1] Limit multiple fluorescence up to given order. Last iteration is absorption only.
 *
 * CALCULATED PARAMETERS:
-* type: scattering event type 0=FLUORESCENCE fluorescence, 1=RAYLEIGH Rayleigh, 2=COMPTON Compton, 3=TRANSMISSION Transmit (absorbsion), 4=DIFFRACTION Diffraction (not handled here), 5=FLUORESCENCE_ESCAPE Detector escape peak, 6=FLUORESCENCE_PILEUP Detector pile-up/sum/coincidence peak
+* type: scattering event type 0=FLUORESCENCE fluorescence, 1=RAYLEIGH Rayleigh, 2=COMPTON Compton, 3=TRANSMISSION Transmit (absorbsion), 4=DIFFRACTION Diffraction (not handled here)
 *
 * %Link
 * The XRayLib https://github.com/tschoonj/xraylib http://dx.doi.org/10.1016/j.sab.2011.09.011
@@ -183,8 +152,6 @@ SETTING PARAMETERS(
   focus_xw=0, focus_yh=0, focus_aw=0, focus_ah=0, int target_index=0,
   int flag_compton=1, int flag_rayleigh=1, int flag_lorentzian=0,
   int flag_kissel=0,
-  escape_ratio=0, escape_energy=1.739,
-  pileup_ratio=0,
   int order=1)
 
 /* X-ray parameters: (x,y,z,kx,ky,kz,phi,t,Ex,Ey,Ez,p) */
@@ -206,8 +173,6 @@ SHARE %{
   #define COMPTON      2  // Incoherent
   #define DIFFRACTION  3  // diffraction
   #define TRANSMISSION 4
-  #define FLUORESCENCE_ESCAPE 5 // Detector escape      peak fluorescence
-  #define FLUORESCENCE_PILEUP 6 // Detector pile-up/sum peak fluorescence
 
   #include <xraylib/xraylib.h>
   
@@ -234,7 +199,7 @@ SHARE %{
     // loop on possible fluorescence lines
     for (i_line=0; i_line<XRAYLIB_LINES_MAX; i_line++) { 
       // cumulative sum of the line cross sections
-      xs[FLUORESCENCE] += kissel ?
+      xs[FLUORESCENCE] += kissel && Z >= 50 ?
         CSb_FluorLine_Kissel(Z, -i_line, E0, NULL) /* XRayLib lines are negative integers */
       : CSb_FluorLine(Z, -i_line, E0, NULL);
     }
@@ -309,7 +274,7 @@ SHARE %{
     // compute cumulated XS for all fluo lines
     cum_xs_lines[0] = sum_xs = 0;
     for (i_line=0; i_line<XRAYLIB_LINES_MAX; i_line++) { // loop on fluorescent lines
-      double xs = kissel ?
+      double xs = kissel && Z >= 50 ?
         CSb_FluorLine_Kissel(Z, -i_line, E0, NULL) /* XRayLib lines are negative integers */
       : CSb_FluorLine(Z, -i_line, E0, NULL);
       // when a line is inactive: E=xs=0
@@ -940,22 +905,6 @@ do { /* while (intersect) Loop over multiple scattering events */
         kf         = ComptonEnergy(E, theta, NULL)*E2K; /* XRayLib, fraction of emc2=511 keV */
         p         *= 4*PI*dsigma/xs[COMPTON];
         break;
-    }
-    
-    
-
-    // handle detector escape peak: just shift energy down by detector K-alpha
-    if (escape_ratio > 0 && escape_energy > 0 && kf > escape_energy*E2K && rand01() < escape_ratio) {
-      kf  -= escape_energy*E2K; // escape
-      type = FLUORESCENCE_ESCAPE;
-
-    } else if (type == FLUORESCENCE && pileup_ratio > 0 && rand01() < pileup_ratio) {
-      // handle detector pile-up peak: get an other fluo line and sum it
-      i_Z = XRMC_SelectFromDistribution(cum_xs_fluo,     compound->nElements+1);
-      Z   = compound->Elements[i_Z];
-      Ef  = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel);
-      kf += Ef*E2K;             // pile-up
-      type= FLUORESCENCE_PILEUP;
     }
     
     kx = kf*kf_x;
