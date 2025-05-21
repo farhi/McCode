@@ -575,8 +575,8 @@ TRACE %{
 int    intersect=0;       /* flag to continue/stop */
 int    reuse    =0;       /* flag raised when reusing (SPLIT) */
 int    type     =-1;      /* type of interaction */
-double l0,  l1,  l2,  l3; /* times for intersections */
-double dl0, dl1, dl2, dl; /* time intervals */
+double l0=0,  l1=0,  l2=0,  l3=0; /* times for intersections */
+double dl0=0, dl1=0, dl2=0, dl=0; /* time intervals */
 int    flag_concentric = 0;
 int    flag_ishollow   = 0;
 int    event_counter   = 0;         /* scattering event counter (multiple fluorescence) */
