@@ -44,7 +44,8 @@ int reflec_Init(t_Reflec *R, enum reflec_Type typ, char *file, void *pars){
           if(pars){
               reflec_Init_parratt(R, N,((double **) pars)[1], ((double **) pars)[2], ((double **) pars)[3]);        
           }else{
-              fprintf(stderr,"WARNING:(%s) No parameters specified to Parratt reflectivity algortihm. Setting R=0.\n",REFLIBNAME);
+              fprintf(stderr,"Warning: %s: No parameters specified to Parratt reflectivity algortihm. Setting R=0.\n",
+                      REFLIBNAME);
               R->type=CONSTANT;
               R->prms.rconst.R=0;
           }
@@ -85,7 +86,8 @@ int reflec_Init(t_Reflec *R, enum reflec_Type typ, char *file, void *pars){
       }
     default:
       {
-        fprintf(stderr,"Error (%s): Undetermined reflectivity parameterization type. Setting R=0\n",REFLIBNAME);
+        fprintf(stderr,"Error: %s: Undetermined reflectivity parameterization type. Setting R=0.\n",
+                REFLIBNAME);
 	free(R);
 	R=NULL;
 	return -1;
@@ -131,7 +133,8 @@ int reflec_Init_File(t_Reflec *R, char *filename){
     /*if the filename is neither empty, blank, nor "NULL" read it, else return a constant opaque surface (R=0)*/
     int status;
     if(!(filename && strlen(filename) && strcmp(filename,"NULL") && (status = Table_Read(table, filename, 1)!=-1) ) ) {
-      fprintf(stderr,"Warning: (%s) no reflectivity file given. Surface is opaque.\n","reflectivity-lib");
+      fprintf(stderr,"Warning: %s: No reflectivity file given. Surface is opaque.\n",
+              REFLIBNAME);
       R->type=CONSTANT;
       R->prms.rconst.R=0;
       return 0;
@@ -153,7 +156,8 @@ int reflec_Init_File(t_Reflec *R, char *filename){
         {
           char** header_parsed=Table_ParseHeader(table->header,"material", "d", NULL);
           if(!header_parsed[0] || !header_parsed[1] ){
-            fprintf(stderr,"Error (%s) Error: Could not parse file \"%s\"\n",__FILE__,filename);
+            fprintf(stderr,"Error: %s: Could not parse file \"%s\".\n",
+                    REFLIBNAME, filename);
             exit(-1);
           }
           stracpy(R->prms.rb.matrl,header_parsed[0],255);
@@ -165,7 +169,8 @@ int reflec_Init_File(t_Reflec *R, char *filename){
         {
           char **header_parsed=Table_ParseHeader(table->header, "material", "Z", "A[r]", "rho", "d", NULL);
           if(!(header_parsed[1] && header_parsed[2] && header_parsed[3])){
-            fprintf(stderr,"Error (%s) Error: Could not parse file \"%s\"\n",__FILE__,filename);
+            fprintf(stderr,"Error: %s: Could not parse file \"%s\".\n",
+                    REFLIBNAME,filename);
             exit(-1);
           } else {
             stracpy(R->prms.rc.matrl,header_parsed[0],255);
@@ -191,7 +196,8 @@ int reflec_Init_File(t_Reflec *R, char *filename){
         {
           char **header_parsed = Table_ParseHeader(table->header, "#N=", "#d=", "#delta=", "#beta=", NULL);
           if (! (header_parsed[0] && header_parsed[1] && header_parsed[2] && header_parsed[3])){
-            fprintf(stderr,"Error (%s) Error: Could not parse file \"%s\"\n",__FILE__,filename);
+            fprintf(stderr,"Error: %s: Could not parse file \"%s\".\n",
+                    REFLIBNAME,filename);
             exit(-1);
           }
           unsigned long N=strtol(header_parsed[0], NULL, 10);
@@ -209,7 +215,8 @@ int reflec_Init_File(t_Reflec *R, char *filename){
         {
           char **header_parsed = Table_ParseHeader(table->header, "#N=", "#gamma=", "#lambda=", "#rho_ab=", NULL);
           if (! (header_parsed[0] && header_parsed[1] && header_parsed[2] && header_parsed[3] && header_parsed[4])){
-            fprintf(stderr,"Error (%s) Error: Could not parse file \"%s\"\n",__FILE__,filename);
+            fprintf(stderr,"Error: %s: Could not parse file \"%s\".\n",
+                    REFLIBNAME,filename);
             exit(-1);
           }
 
@@ -228,7 +235,8 @@ int reflec_Init_File(t_Reflec *R, char *filename){
           /*parse header for E_min E_max etc.*/
           char **header_parsed = Table_ParseHeader(table->header,"e_min=","e_max=","theta_min=","theta_max=",NULL);
           if (!(header_parsed[0] && header_parsed[1] && header_parsed[2] && header_parsed[3])){
-            fprintf(stderr,"Error (%s) Error: Could not parse file \"%s\"\n",__FILE__,filename); //1619
+            fprintf(stderr,"Error: %s: Could not parse file \"%s\".\n",
+                    REFLIBNAME,filename); //1619
             exit(-1);
           }
           R->prms.rethpm.emin=strtod(header_parsed[0],NULL);
@@ -238,17 +246,20 @@ int reflec_Init_File(t_Reflec *R, char *filename){
           int rows = R->prms.rethpm.T->rows;
           int cols = R->prms.rethpm.T->columns;
           if(rows == 0){ //implies cols == 0 as well
-            fprintf(stderr,"Error (%s): File %s contains no table.",__FILE__, filename);
+            fprintf(stderr,"Error: %s: File %s contains no table.\n",
+                    REFLIBNAME, filename);
             exit(1);
           } else {
             if(rows == 1){
-              printf("File %s contains only a single row. Setting e_step = 0", filename);
+              printf("Warning: %s: File %s contains only a single row. Setting e_step = 0.\n",
+                     REFLIBNAME, filename);
               R->prms.rethpm.estep=0;
             } else {
               R->prms.rethpm.estep=(R->prms.rethpm.emax - R->prms.rethpm.emin)/(rows-1);
             }
             if(cols == 1){
-              printf("File %s contains only a single column. Setting theta_step = 0", filename);
+              printf("Warning: %s: File %s contains only a single column. Setting theta_step = 0.\n",
+                     REFLIBNAME, filename);
               R->prms.rethpm.thetastep=0;
             } else {
               R->prms.rethpm.thetastep=(R->prms.rethpm.thetamax - R->prms.rethpm.thetamin)/(cols-1);
@@ -259,7 +270,8 @@ int reflec_Init_File(t_Reflec *R, char *filename){
       case UNDETERMINED:
       default:
         {
-          fprintf(stderr,"Warning (%s): Undetermined reflectivity parametrization type. r set to 1\n",REFLIBNAME);
+          fprintf(stderr,"Warning: %s: Undetermined reflectivity parametrization type. R set to 1.\n",
+                  REFLIBNAME);
           return 1;
         }
     }
@@ -275,10 +287,14 @@ enum reflec_Type get_table_reflec_type(t_Table *t){
       long Z = strtol(header_parsed[0],NULL,0);
       if(Z >0 && Z<116){
         /*this appears to be a coating file similar to Pt.txt and Be.txt (in the mcxtrace data library*/
-        printf("INFO (%s): Datafile type not explicit in reflectivity file. Inferring type COATING from datafile.\n",REFLIBNAME);
+        printf("INFO: %s: Datafile type not explicit in reflectivity file %s.\n"
+               "      Inferring type COATING from datafile.\n",
+               REFLIBNAME, t->filename);
         return COATING;
       }else{
-        fprintf(stderr,"ERROR (%s): Could not determine reflectivity type from file.\n",REFLIBNAME);
+        fprintf(stderr,"Error: %s: Could not determine reflectivity type from file %s.\n",
+                REFLIBNAME, t->filename);
+        exit(-1);
       }
     }
     /*for this to work well we need to trim the type string*/
@@ -290,7 +306,7 @@ enum reflec_Type get_table_reflec_type(t_Table *t){
       *(back++)='\0';
     }
 
-    printf("INFO (%s)  reflectivity parameterization type: \'%s\'\n",REFLIBNAME, type);
+    printf("INFO: %s: Reflectivity parameterization type: \'%s\'\n",REFLIBNAME, type);
     if(strcmp(type, NAME_CONSTANT) == 0){
         return CONSTANT;
     } else if(strcmp(type, NAME_BARE) == 0){
@@ -306,7 +322,7 @@ enum reflec_Type get_table_reflec_type(t_Table *t){
     } else if(strcmp(type, NAME_KINEMATIC) == 0){
         return KINEMATIC;
     } else {
-        printf("ERROR (%s): \'%s\'; is not a known parametrization!", REFLIBNAME, type);
+        printf("Error: %s: \'%s\'; is not a known parametrization!", REFLIBNAME, type);
         exit(-1);
     }
 }
@@ -470,7 +486,8 @@ double complex refleccq( t_Reflec r_handle, double q, double g, double k, double
       default:
         {
 #ifndef OPENACC
-          fprintf(stderr,"Error (%s): Undetermined reflectivity type. r set to 1\n", REFLIBNAME);
+          fprintf(stderr,"Error: %s: Undetermined reflectivity type. R set to 1.\n",
+                  REFLIBNAME);
 #endif
           r=1.0;
         }
@@ -522,7 +539,8 @@ double reflecq( t_Reflec r_handle, double q, double g, double k, double theta){
       default:
         {
 #ifndef OPENACC
-          fprintf(stderr,"Warning (%s): Undetermined reflectivity type. r set to 1\n", REFLIBNAME);
+          fprintf(stderr,"Warning: %s: Undetermined reflectivity type. R set to 1.\n",
+                  REFLIBNAME);
 #endif
           r=1.0;
 	}
