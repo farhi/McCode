@@ -216,6 +216,8 @@ DECLARE
   DArray1d reuse_cum_xs_fluo;
   DArray1d reuse_cum_xs_Compton;
   DArray1d reuse_cum_xs_Rayleigh;
+  int    reuse_Nq;
+  double reuse_my_s_k2_sum;
   
 %}
 
@@ -430,10 +432,11 @@ INITIALIZE %{
 
   // cached variables set to 0 (for SPLIT)
   reuse_nb=0;
-  reuse_ki=reuse_l0=reuse_l3=0;
+  reuse_ki=reuse_l0=reuse_l3=reuse_sigma_barn=0;
   reuse_cum_xs_fluo              = create_darr1d(compound->nElements+1);
   reuse_cum_xs_Compton           = create_darr1d(compound->nElements+1);
   reuse_cum_xs_Rayleigh          = create_darr1d(compound->nElements+1);
+  reuse_cum_xs_fluo[0]=reuse_cum_xs_Compton[0]=reuse_cum_xs_Rayleigh[0]=0;
 %}
 
 TRACE %{
@@ -445,7 +448,7 @@ double l0,  l1,  l2,  l3; /* times for intersections */
 double dl0, dl1, dl2, dl; /* time intervals */
 int    flag_concentric = 0;
 int    flag_ishollow   = 0;
-double sigma_barn=0, xs[5]; /* cross sections [barn/atom] fluo/Compton/Rayleigh */
+double sigma_barn=0, xs[5]; /* cross sections [barn/atom] fluo/Compton/Rayleigh/diff/transmit */
 double aim_x=0, aim_y=0, aim_z=1;   /* Position of target relative to scattering point */
 int    event_counter   = 0;         /* scattering event counter (multiple fluorescence) */
 int    force_transmit  = 0;         /* Flag to handle cross-section weighting in case of finite order */
@@ -546,13 +549,15 @@ do { /* while (intersect) Loop over multiple scattering events */
 
 
     // store values for potential next SPLIT
-    reuse           = 0;
-    reuse_intersect = intersect;
-    reuse_l0        = l0;
-    reuse_l1        = l1;
-    reuse_l2        = l2;
-    reuse_l3        = l3;
-    reuse_ki        = ki;
+    if (!event_counter) {
+      reuse           = 0;
+      reuse_intersect = intersect;
+      reuse_l0        = l0;
+      reuse_l1        = l1;
+      reuse_l2        = l2;
+      reuse_l3        = l3;
+      reuse_ki        = ki;
+    }
   } // if !reuse (SPLIT)
 
   if (intersect) { /* the photon hits the sample */
@@ -638,13 +643,17 @@ do { /* while (intersect) Loop over multiple scattering events */
       }
 
       // store values into cache for SPLIT
-      for (i_Z=0; i_Z< compound->nElements; i_Z++) {
-        reuse_cum_xs_fluo[i_Z+1]     = cum_xs_fluo[i_Z+1];
-        reuse_cum_xs_Compton[i_Z+1]  = cum_xs_Compton[i_Z+1];
-        reuse_cum_xs_Rayleigh[i_Z+1] = cum_xs_Rayleigh[i_Z+1];
+      if (!event_counter) {
+        for (i_Z=0; i_Z< compound->nElements; i_Z++) {
+          reuse_cum_xs_fluo[i_Z+1]     = cum_xs_fluo[i_Z+1];
+          reuse_cum_xs_Compton[i_Z+1]  = cum_xs_Compton[i_Z+1];
+          reuse_cum_xs_Rayleigh[i_Z+1] = cum_xs_Rayleigh[i_Z+1];
+        }
+        reuse_cum_xs_diffraction  = xs[DIFFRACTION];
+        reuse_sigma_barn          = sigma_barn;
+        reuse_Nq                  = Nq;
+        reuse_my_s_k2_sum         = my_s_k2_sum;
       }
-      reuse_cum_xs_diffraction  = xs[DIFFRACTION];
-      reuse_sigma_barn          = sigma_barn;
 
     } else {
       // reuse cached values (SPLIT)
@@ -658,10 +667,10 @@ do { /* while (intersect) Loop over multiple scattering events */
         xs[DIFFRACTION]        = reuse_cum_xs_diffraction;
       }
 
-      sigma_barn = reuse_sigma_barn;
+      sigma_barn   = reuse_sigma_barn;
       if (flag_powder) {
-        my_s_k2_sum= line_info.my_s_k2_sum;
-        Nq         = line_info.Nq;
+        my_s_k2_sum= line_info.my_s_k2_sum=reuse_my_s_k2_sum;
+        Nq         = line_info.Nq         =reuse_Nq;
       }
     }
 
@@ -718,7 +727,7 @@ do { /* while (intersect) Loop over multiple scattering events */
     dsigma = (xs[FLUORESCENCE]+xs[RAYLEIGH]+xs[COMPTON]+xs[DIFFRACTION])/sigma_barn;
     if (dsigma < 1) p *= dsigma; // < 1
 
-    /* MC choose process from cross sections 'xs': fluo, Compton, Rayleigh, diff */
+    /* MC choose process from cross sections 'xs': fluo, Rayleigh, Compton, diff */
     type = XRMC_SelectInteraction(xs, DIFFRACTION+1); // up to DIFFRACTION
 
     /* choose Z (element) on associated XS, taking into account mass-fractions */
