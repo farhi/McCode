@@ -59,7 +59,7 @@ AT(0,0,3) RELATIVE Origin
 
 COMPONENT sample=Fluorescence(material=material,
   xwidth=0.001,yheight=0.001,zdepth=0.0001, p_interact=0.99,
-  target_index=1, focus_xw=0.0005, focus_yh=0.0005)
+  target_index=1, focus_xw=0.0005, focus_yh=0.0005, flag_lorentzian=1)
 AT (0,0,0) RELATIVE sample_mount_point
 EXTEND %{
   if (!SCATTERED) ABSORB;
