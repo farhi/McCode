@@ -17,7 +17,7 @@
 * This instrument simply has a lab source, a few monitors and a sample 
 * to model material fluorescence, Compton and Rayleigh scattering. 
 * 
-* %Example: Test_Fluorescence.instr material=LaB6 -n1e5 Detector: emon_I=1.04399e-12
+* %Example: Test_Fluorescence.instr material=LaB6 -n1e5 Detector: emon_I=7.29897e-13
 *
 * %Parameters
 * material: [str]  Material file to use, e.g. chemical formulae "Pb2SnO4"
