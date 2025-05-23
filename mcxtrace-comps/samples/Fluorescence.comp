@@ -571,16 +571,17 @@ INITIALIZE %{
 TRACE %{
 
 int    intersect=0;       /* flag to continue/stop */
-int    reuse=0;
-int    type=-1;
+int    reuse    =0;       /* flag raised when reusing (SPLIT) */
+int    type     =-1;      /* type of interaction */
 double l0,  l1,  l2,  l3; /* times for intersections */
 double dl0, dl1, dl2, dl; /* time intervals */
 int    flag_concentric = 0;
 int    flag_ishollow   = 0;
-double sigma_barn=0, xs[5];         /* cross sections [barn/atom] fluo/Compton/Rayleigh/diff/transmit */
-double aim_x=0, aim_y=0, aim_z=1;   /* Position of target relative to scattering point */
 int    event_counter   = 0;         /* scattering event counter (multiple fluorescence) */
 int    force_transmit  = 0;         /* Flag to handle cross-section weighting in case of finite order */
+double sigma_barn=0, xs[5];         /* cross sections [barn/atom] fluo/Compton/Rayleigh/diff/transmit */
+double aim_x=0, aim_y=0, aim_z=1;   /* Position of target relative to scattering point */
+
 
 #ifdef OPENACC
 #ifdef USE_OFF
@@ -610,6 +611,7 @@ do { /* while (intersect) Loop over multiple scattering events */
     l1        = reuse_l1;
     l2        = reuse_l2;
     l3        = reuse_l3;
+
   } else {
     // we have a different event: compute intersection lengths
     
@@ -675,7 +677,6 @@ do { /* while (intersect) Loop over multiple scattering events */
 
     // store values for potential next SPLIT
     if (!event_counter) {
-      reuse           = 0;
       reuse_intersect = intersect;
       reuse_l0        = l0;
       reuse_l1        = l1;
@@ -683,6 +684,7 @@ do { /* while (intersect) Loop over multiple scattering events */
       reuse_l3        = l3;
       reuse_ki        = ki;
     }
+    reuse           = 0;
   } // if !reuse (SPLIT)
 
   if (intersect) { /* the photon hits the sample */
@@ -771,7 +773,6 @@ do { /* while (intersect) Loop over multiple scattering events */
         xs[COMPTON]           += reuse_cum_xs_Compton[i_Z+1];
         xs[RAYLEIGH]          += reuse_cum_xs_Rayleigh[i_Z+1];
       }
-      
       sigma_barn = reuse_sigma_barn;
     }
     
@@ -811,7 +812,7 @@ do { /* while (intersect) Loop over multiple scattering events */
       /* we go through the material without interaction, and exit */
       if (type <0) type = TRANSMISSION; // 3 transmission
       intersect = 0;
-      PROP_DL(dl0+dl2);
+      PROP_DL(d_path);
       /* attenuate beam by portion which is scattered (and left along) */
       p *= p_trans;
       if (p_interact>0 && p_interact<=1) p /= mc_trans;
