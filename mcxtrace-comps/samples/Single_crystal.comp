@@ -1121,7 +1121,7 @@ int hkl_search(struct hkl_data *L, void *TT, int count, double V0,
     /* Functions for "reorientation", powder mode */
     /* Powder, forward */
 #pragma acc routine
-       void randrotate(double *nx, double *ny, double *nz, double a, double b, double c) {
+void randrotate(double *nx, double *ny, double *nz, double a, double b, double c) {
       double x1, y1, z1, x2, y2, z2;
       rotate(x1, y1, z1, *nx,*ny,*nz, a, 1, 0, 0); /* <1> = rot(<n>,a) */
       rotate(x2, y2, z2,  x1, y1, z1, b, 0, 1, 0); /* <2> = rot(<1>,b) */

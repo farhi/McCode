@@ -167,6 +167,8 @@ SHARE %{
   #ifndef FLUORESCENCE_DECL
   #define FLUORESCENCE_DECL
 
+  // WARNING: mush NOT use rand01 calls here, as they depend on _particle
+
   #define XRAYLIB_LINES_MAX 383
   #define FLUORESCENCE 0  // Fluo
   #define RAYLEIGH     1  // Coherent
@@ -215,12 +217,12 @@ SHARE %{
   /* XRMC_SelectFromDistribution: select a random element from a distribution
    *   index = XRMC_SelectFromDistribution(cum_sum[N], N);
    * index is returned within 0 and N-1
-   * The x_arr must be a continuously increasing cumulated sum, which last element is the max
+   * The x_arr must be a continuously increasing cumulated sum, which last element is the max.
    */
-  int XRMC_SelectFromDistribution(double x_arr[], int N)
+  int XRMC_SelectFromDistribution(double x_arr[], int N, double r)
   {
     if (x_arr == NULL || N <=0) return (0);
-    double x=rand01()*x_arr[N-1];
+    double x = r*x_arr[N-1]; // the threshold cumulated value to search in distribution
     if (x<x_arr[0]) {    // x is smaller than lower limit
       return 0;
     }
@@ -241,10 +243,10 @@ SHARE %{
   /* XRMC_SelectInteraction: select interaction type Fluo/Compton/Rayleigh
    * Return the interaction type from a random choice within cross sections 'xs'
    *   type = XRMC_SelectInteraction(xs[3], 3);
-   * 'xs' is computed with XRMC_CrossSections.
-   * type is one of FLUORESCENCE | RAYLEIGH | COMPTON
+   * 'xs' is computed with XRMC_CrossSections. Can be unsorted.
+   * type is e.g. one of FLUORESCENCE | RAYLEIGH | COMPTON
    */
-  int XRMC_SelectInteraction(double *xs, int nb_processes)
+  int XRMC_SelectInteraction(double *xs, int nb_processes, double r)
   {
     double sum_xs, *cum_xs;
     int    i;
@@ -257,7 +259,7 @@ SHARE %{
       sum_xs += xs[i];
       cum_xs[i+1]= sum_xs;
     }
-    i = XRMC_SelectFromDistribution(cum_xs, nb_processes+1);
+    i = XRMC_SelectFromDistribution(cum_xs, nb_processes+1, r);
     free(cum_xs);
     return i;
   } // XRMC_SelectInteraction
@@ -266,7 +268,7 @@ SHARE %{
    * When kissel=1, M-lines are included, but computation is 10x slower
    *   Ef = XRMC_SelectFluorescenceEnergy(Z, E0, &dE, kissel);
    */
-  double XRMC_SelectFluorescenceEnergy(int Z, double E0, double *dE, int kissel)
+  double XRMC_SelectFluorescenceEnergy(int Z, double E0, double *dE, int kissel, double r)
   {
     int i_line;
     double sum_xs, cum_xs_lines[XRAYLIB_LINES_MAX+1];
@@ -282,7 +284,7 @@ SHARE %{
       cum_xs_lines[i_line+1] = sum_xs; // cumulative sum of their cross sections
     }
     // select randomly one of these lines
-    i_line = XRMC_SelectFromDistribution(cum_xs_lines, XRAYLIB_LINES_MAX); // extract a line
+    i_line = XRMC_SelectFromDistribution(cum_xs_lines, XRAYLIB_LINES_MAX, r); // extract a line
     // get the K shell line width as approximation of fluorescence line width
     if (dE) *dE = AtomicLevelWidth(Z, K_SHELL, NULL); // keV, full-width in keV
 
@@ -721,6 +723,7 @@ do { /* while (intersect) Loop over multiple scattering events */
       intersect = 0; /* the sample was passed entirely */
     }
   } // if intersect (geometry)
+
     
   /* ========================================================================== */
   /*                             INTERACTION PROCESS                            */
@@ -831,22 +834,23 @@ do { /* while (intersect) Loop over multiple scattering events */
     /* correct for XS total(photo+Compton+Rayleigh) > sum(fluo+Compton+Rayleigh) */
     dsigma = (xs[FLUORESCENCE]+xs[RAYLEIGH]+xs[COMPTON])/sigma_barn;
     if (dsigma < 1) p *= dsigma; // < 1
+    // NOTE: dsigma may be > 1 ???
 
     /* MC choose process from cross sections 'xs': fluo, Rayleigh, Compton  */
-    type = XRMC_SelectInteraction(xs, COMPTON+1); // up to COMPTON
+    type = XRMC_SelectInteraction(xs, COMPTON+1, rand01()); // up to COMPTON
     
     /* choose Z (element) on associated XS, taking into account mass-fractions */
     switch (type) {
       case FLUORESCENCE:
-        i_Z = XRMC_SelectFromDistribution(cum_xs_fluo,     compound->nElements+1);
+        i_Z = XRMC_SelectFromDistribution(cum_xs_fluo,     compound->nElements+1, rand01());
         break;
       case RAYLEIGH:
         if (!flag_rayleigh) ABSORB;
-        i_Z = XRMC_SelectFromDistribution(cum_xs_Rayleigh, compound->nElements+1);
+        i_Z = XRMC_SelectFromDistribution(cum_xs_Rayleigh, compound->nElements+1, rand01());
         break;
       case COMPTON:
         if (!flag_compton) ABSORB;
-        i_Z = XRMC_SelectFromDistribution(cum_xs_Compton,  compound->nElements+1);
+        i_Z = XRMC_SelectFromDistribution(cum_xs_Compton,  compound->nElements+1, rand01());
         break;
       default:
         // printf("%s: WARNING: process %i unknown. Absorb.\n", NAME_CURRENT_COMP, type);
@@ -877,7 +881,7 @@ do { /* while (intersect) Loop over multiple scattering events */
       case FLUORESCENCE: /* 0 Fluo: choose line */
         n_fluo++;
         p_fluo += p;
-        Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel); // dE full-width in keV
+        Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel, rand01()); // dE full-width in keV
         if (dE) {
           dE /= 2;  // half-width
           if (flag_lorentzian) dE  *= tan(PI/2*randpm1()); // Lorentzian distribution
@@ -929,6 +933,7 @@ do { /* while (intersect) Loop over multiple scattering events */
     if (order && (event_counter >= order || p/pi < 1e-15)) { force_transmit=1; }
  
   } // if intersect (scatter)
+
 } while(intersect); /* end do (intersect) (multiple scattering loop) */
 
 %}

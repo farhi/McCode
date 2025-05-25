@@ -730,26 +730,26 @@ do { /* while (intersect) Loop over multiple scattering events */
     if (dsigma < 1) p *= dsigma; // < 1
 
     /* MC choose process from cross sections 'xs': fluo, Rayleigh, Compton, diff */
-    type = XRMC_SelectInteraction(xs, DIFFRACTION+1); // up to DIFFRACTION
+    type = XRMC_SelectInteraction(xs, DIFFRACTION+1, rand01()); // up to DIFFRACTION
 
     /* choose Z (element) on associated XS, taking into account mass-fractions */
     switch (type) {
       case FLUORESCENCE:
-        i_Z = XRMC_SelectFromDistribution(cum_xs_fluo,     compound->nElements+1);
+        i_Z = XRMC_SelectFromDistribution(cum_xs_fluo,     compound->nElements+1, rand01());
         break;
       case RAYLEIGH:
         if (!flag_rayleigh) ABSORB;
-        i_Z = XRMC_SelectFromDistribution(cum_xs_Rayleigh, compound->nElements+1);
+        i_Z = XRMC_SelectFromDistribution(cum_xs_Rayleigh, compound->nElements+1, rand01());
         break;
       case COMPTON:
         if (!flag_compton) ABSORB;
-        i_Z = XRMC_SelectFromDistribution(cum_xs_Compton,  compound->nElements+1);
+        i_Z = XRMC_SelectFromDistribution(cum_xs_Compton,  compound->nElements+1, rand01());
         break;
       case DIFFRACTION:
         if (!flag_powder) ABSORB;
         if (Nq > 1) {
           // choose a line among those possible, using F2 as relative probability/intensity
-          line = XRMC_SelectInteraction(line_info.my_s_k2, Nq);
+          line = XRMC_SelectInteraction(line_info.my_s_k2, Nq, rand01());
         } else line = 0;/* Select between Nq powder lines */
         break;
       default: // should never happen
@@ -840,7 +840,7 @@ do { /* while (intersect) Loop over multiple scattering events */
       case FLUORESCENCE: /* 0 Fluo: choose line */
         n_fluo++;
         p_fluo += p;
-        Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel); // dE full-width in keV
+        Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel, rand01()); // dE full-width in keV
         if (dE) {
           dE /= 2;  // half-width
           if (flag_lorentzian) dE  *= tan(PI/2*randpm1()); // Lorentzian distribution
