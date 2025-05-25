@@ -17,7 +17,7 @@
 * This instrument simply has a lab source, a few monitors and a sample 
 * to model material fluorescence, Compton and Rayleigh scattering. 
 * 
-* %Example: Test_Fluorescence.instr material=LaB6 -n1e5 Detector: emon_I=7.29897e-13
+* %Example: Test_Fluorescence.instr material=LaB6 -n1e5 Detector: emon_I=1.04564e-12
 *
 * %Parameters
 * material: [str]  Material file to use, e.g. chemical formulae "Pb2SnO4"
@@ -67,10 +67,10 @@ EXTEND %{
 %}
 
 // ideal detectors
-COMPONENT emon_fluo = E_monitor(restore_xray=1,
+COMPONENT emon_fluo = E_monitor(
   xwidth=0.007, yheight=0.007,
   nE=2001,Emin=0, Emax=1.5*E0,
-  filename="Fluorescence.dat")
+  filename="Fluorescence.dat", restore_xray=1)
 WHEN (Stype == FLUORESCENCE)
 AT(0,0,0.1) RELATIVE PREVIOUS
 
@@ -83,8 +83,10 @@ WHEN (Stype == RAYLEIGH)
 AT(0,0,0) RELATIVE PREVIOUS
 
 // SDD model
-COMPONENT emon = Fluo_detector(restore_xray=1,nE=2001,Emin=0, Emax=1.5*E0,
-  filename="emon.dat",xwidth=0.007, yheight=0.007)
+COMPONENT emon = Fluo_detector(
+  xwidth=0.007, yheight=0.007,
+  nE=2001,Emin=0, Emax=1.5*E0,
+  filename="emon.dat", restore_xray=1)
 AT(0,0,0) RELATIVE PREVIOUS
 
 COMPONENT psd = PSD_monitor(xwidth=0.001, yheight=0.001, nx=100, ny=100, filename="psd.dat")
