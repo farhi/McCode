@@ -59,6 +59,9 @@
 * resolution:       [keV] Resolution FWHM in keV at resolution_energy.
 * flag_lorentzian:    [1] When 1, the line shapes are assumed to be Lorentzian, else Gaussian.
 *
+* CALCULATED PARAMETERS:
+* type: scattering event type 5=SDD_ESCAPE 6=SDD_PILEUP (dead time)
+*
 * %Link
 * Fluorescence https://en.wikipedia.org/wiki/Fluorescence
 *
@@ -77,61 +80,13 @@ SETTING PARAMETERS(
 
 /* X-ray parameters: (x,y,z,kx,ky,kz,phi,t,Ex,Ey,Ez,p) */
 
-SHARE %{
+SHARE COPY Fluorescence
+EXTEND %{
 #ifndef FLUO_DETECTOR
 #define FLUO_DETECTOR
 
 #define SDD_ESCAPE 5 // Detector escape      peak fluorescence
 #define SDD_PILEUP 6 // Detector pile-up/sum peak fluorescence
-  /* SDD_SelectFromDistribution: select a random element from a distribution
-   *   index = SDD_SelectFromDistribution(cum_sum[N], N);
-   * index is returned within 0 and N-1
-   * The x_arr must be a continuously increasing cumulated sum, which last element is the max
-   */
-  int SDD_SelectFromDistribution(double x_arr[], int N)
-  {
-    if (x_arr == NULL || N <=0) return (0);
-    double x=rand01()*x_arr[N-1];
-    if (x<x_arr[0]) {    // x is smaller than lower limit
-      return 0;
-    }
-    if (x>=x_arr[N-1]) { // x is greater or equal to upper limit
-      return N-1;
-    }
-    int id=0, iu=N-1; // lower and upper index of the subarray to search
-    while (iu-id>1) { // search until the size of the subarray to search is >1
-      int im = (id + iu)/2; // use the midpoint for equal partition
-      // decide which subarray to search
-      if (x>=x_arr[im]) id=im; // change min index to search upper subarray
-      else iu=im; // change max index to search lower subarray
-    }
-
-    return id;
-  } // SDD_SelectFromDistribution
-
-  /* XRMC_SelectInteraction: select interaction type Fluo/Compton/Rayleigh
-   * Return the interaction type from a random choice within cross sections 'xs'
-   *   type = XRMC_SelectInteraction(xs[3], 3);
-   * 'xs' is computed with XRMC_CrossSections.
-   * type is one of FLUORESCENCE | RAYLEIGH | COMPTON
-   */
-  int SDD_SelectInteraction(double *xs, int nb_processes)
-  {
-    double sum_xs, *cum_xs;
-    int    i;
-
-    if (xs == NULL || nb_processes < 1) return 0;
-    cum_xs = malloc((nb_processes+1)*sizeof(double));
-    if (!cum_xs)          return 0;
-    cum_xs[0]=sum_xs=0;
-    for (i=0; i< nb_processes; i++) {
-      sum_xs += xs[i];
-      cum_xs[i+1]= sum_xs;
-    }
-    i = SDD_SelectFromDistribution(cum_xs, nb_processes+1);
-    free(cum_xs);
-    return i;
-  } // SDD_SelectInteraction
 #endif
 %}
 
@@ -227,7 +182,7 @@ TRACE %{
     if (pileup_ratio > 0 && N_sum > 1000 && rand01() < pileup_ratio) {
         // handle detector pile-up peak: get an other fluo line and sum it
         // require some statistics in the spectrum in order to select a line
-        int i_E = SDD_SelectInteraction(E_p, nE);
+        int i_E = XRMC_SelectInteraction(E_p, nE, rand01());
         E  += Emin+i_E*(Emax-Emin)/nE;             // pile-up
         type= SDD_PILEUP;
     }
