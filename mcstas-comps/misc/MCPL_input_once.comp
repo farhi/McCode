@@ -44,25 +44,26 @@ DEPENDENCY "@MCPLFLAGS@"
 SHARE
 %{
 #include <mcpl.h>
+#include <sys/stat.h>
 
 typedef struct {
-  // Prefixed names to avoid the _particle accessor macros 
+  // Prefixed names to avoid the _particle accessor macros
   double _x, _y, _z;
   double _vx, _vy, _vz;
   double _sx, _sy, _sz;
   // insert [int, void*, int, double, double, double, unsigned long]
-  // here in order to have matching memory layout with 
+  // here in order to have matching memory layout with
   // _struct_particle, e.g., _class_particle
   double _t, _p;
 } mcpl_input_once_particle_t;
 
-void mcpl_input_once_translator(const int use_polarisation, const mcpl_particle_t * input, mcpl_input_once_particle_t * output){
+void mcpl_input_once_translator(const int use_polarisation, double weight_scale, const mcpl_particle_t * input, mcpl_input_once_particle_t * output){
   // position in mm -> m
   output->_x = input->position[0] / 100;
   output->_y = input->position[1] / 100;
   output->_z = input->position[2] / 100;
   // ekin in MeV -> meV; then to velocity
-  double nrm = sqrt(input->ekin  * 1e9 / VS2E); 
+  double nrm = sqrt(input->ekin  * 1e9 / VS2E);
   output->_vx = input->direction[0] * nrm;
   output->_vy = input->direction[1] * nrm;
   output->_vz = input->direction[2] * nrm;
@@ -73,7 +74,13 @@ void mcpl_input_once_translator(const int use_polarisation, const mcpl_particle_
   // time in msec -> sec
   output->_t = input->time  * 1e-3;
   // probability, unitless
-  output->_p = input->weight;
+  output->_p = input->weight * weight_scale;
+}
+
+int mcplinputonce_file_exist(char *fn)
+{
+  struct stat buffer;
+  return (stat (fn, &buffer) == 0);
 }
 %}
 
@@ -89,24 +96,60 @@ uint64_t maximum_index;
 uint64_t first_particle;
 int times_replayed;
 mcpl_input_once_particle_t * particles;
+double weight_scale;
+char * resolved_filename;
 %}
 
 INITIALIZE
 %{
+  {
+    if ( !filename || !filename[0] ) {
+      fprintf(stderr,"ERROR(%s): Requires filename parameter.\n",
+              NAME_CURRENT_COMP);
+      exit(-1);
+    }
+    char * fn_mcpl = mcpl_name_helper( filename, 'M' );
+    char * fn_mcplgz = mcpl_name_helper( filename, 'G' );
+    if ( mcplinputonce_file_exist(fn_mcpl) ) {
+      if ( mcplinputonce_file_exist(fn_mcplgz) ) {
+        fprintf(stderr,"ERROR(%s): Can not resolve input file unambiguously"
+                " since both %s and %s exist.\n",NAME_CURRENT_COMP,
+                fn_mcpl, fn_mcplgz);
+        exit(-1);
+      }
+      resolved_filename = fn_mcpl;
+      free(fn_mcplgz);
+    } else {
+      resolved_filename = fn_mcplgz;
+      free(fn_mcpl);
+    }
+  }
+
   uint64_t particles_per_node;
   uint64_t last_particle;
   if(Emax<Emin){
     fprintf(stderr, "Error(%s): Nonsensical energy interval: E=[%g,%g]. Aborting.\n", NAME_CURRENT_COMP, Emin, Emax);
     exit(-1);
   }
-  inputfile = mcpl_open_file(filename);
+  inputfile = mcpl_open_file(resolved_filename);
+  double mcpl_ray_count = mcpl_hdr_stat_sum( inputfile, "initial_ray_count" );
+  if ( mcpl_ray_count == -2.0 ) {
+    //legacy format without ray count:
+    weight_scale = 1.0;
+  } else if ( !(mcpl_ray_count>0.0) ) {
+    fprintf(stderr, "ERROR: Input MCPL file has invalid initial_ray_count"
+            " (%g). Unable to determine weight scale.\n", mcpl_ray_count );
+    exit(1);
+  } else {
+    weight_scale = 1.0 / mcpl_ray_count;
+  }
   if (!(nparticles = mcpl_hdr_nparticles(inputfile))) {
     fprintf(stderr, "Error(%s): MCPL-file reports no present particles. Aborting.\n", NAME_CURRENT_COMP);
     exit(-1);
   } else {
     MPI_MASTER(
-      printf("Message(%s): MCPL file (%s) produced with %s.\n", NAME_CURRENT_COMP, filename, mcpl_hdr_srcname(inputfile));
-      printf("Message(%s): MCPL file (%s) contains %lu particles.\n", NAME_CURRENT_COMP, filename, (long unsigned)nparticles); 
+      printf("Message(%s): MCPL file (%s) produced with %s.\n", NAME_CURRENT_COMP, resolved_filename, mcpl_hdr_srcname(inputfile));
+      printf("Message(%s): MCPL file (%s) contains %lu particles.\n", NAME_CURRENT_COMP, resolved_filename, (long unsigned)nparticles);
     );
   }
   first_particle = 0;
@@ -125,7 +168,7 @@ INITIALIZE
   used_neutrons=0;
 #ifdef OPENACC
   preload=1;
-  printf("OpenACC, preload implicit:\n");	    
+  printf("OpenACC, preload implicit:\n");
 #endif
   // Move this node's pointer into the file to its first particle:
   // in preparation for pre-loading or first pass through TRACE
@@ -143,7 +186,7 @@ INITIALIZE
       particle=mcpl_read(inputfile);
       if (particle && particle->pdgcode==2112) {
         if (particle->ekin>Emin*1e-9 && particle->ekin<Emax*1e-9 ) {
-          mcpl_input_once_translator(polarisationuse, particle, particles + used_neutrons++);
+          mcpl_input_once_translator(polarisationuse, weight_scale, particle, particles + used_neutrons++);
         }
         read_neutrons++;
       }
@@ -172,7 +215,7 @@ INITIALIZE
 TRACE
 %{
   mcpl_input_once_particle_t * ptr = NULL;
-  
+
   if (current_index >= maximum_index){
     // go back to the start of this worker's particles, rather than accessing out-of-range data
     #pragma acc atomic write
@@ -200,7 +243,7 @@ TRACE
     if ( particle->ekin<Emin*1e-9 || particle->ekin>Emax*1e-9 ) {
         ABSORB;
     }
-    mcpl_input_once_translator(polarisationuse, particle, ptr);
+    mcpl_input_once_translator(polarisationuse, weight_scale, particle, ptr);
     // And how many of the read neutrons actually get used
     if (!times_replayed) used_neutrons++;
   } else {
@@ -231,10 +274,10 @@ TRACE
   sz = ptr->_sz;
   t = ptr->_t;
   p = ptr->_p;
-  
+
   // done with the mcpl_input_once_particle_t pointer -- free it if not pointing into the particles list
   if (!preload && ptr != NULL) free(ptr);
-  
+
   if (always_smear || times_replayed){
     // fuzz the input
     if (pos_smear) {
@@ -310,13 +353,14 @@ if (mpi_node_rank == 0){
     }
     fprintf(stderr,
     "Warning (%s): You requested %llu neutrons from a file which contains %llu particles in general%s."
-    " T%shis component emitted %llu neutrons in total. Please examine the recorded intensities carefully.\n", 
+    " T%shis component emitted %llu neutrons in total. Please examine the recorded intensities carefully.\n",
     NAME_CURRENT_COMP, requested_neutrons, nparticles, bad_particle_message, mpi_nodes_message, emitted_neutrons
     );
   }
 #if defined (USE_MPI)
 }
 #endif
+ free(resolved_filename);
 %}
 
 MCDISPLAY
@@ -325,10 +369,9 @@ MCDISPLAY
   /*M*/
   multiline(5,-0.085,-0.085,0.0, -0.085,0.085,0.0, -0.045,-0.085,0.0, -0.005,0.085,0.0, -0.005,-0.085,0.0);
   /*I*/
-  line(0.045,-0.085,0, 0.045, 0.085,0);    
-  line(0.005, 0.085,0, 0.085, 0.085,0);    
-  line(0.005,-0.085,0, 0.085,-0.085,0);    
+  line(0.045,-0.085,0, 0.045, 0.085,0);
+  line(0.005, 0.085,0, 0.085, 0.085,0);
+  line(0.005,-0.085,0, 0.085,-0.085,0);
 %}
 
 END
-

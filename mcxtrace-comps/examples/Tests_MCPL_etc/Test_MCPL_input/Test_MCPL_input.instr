@@ -7,7 +7,7 @@
 * Written by: Erik B Knudsen <erkn@fysik.dtu.dk>
 * Date: Mar 2016
 * Origin: DTU
-* %INSTRUMENT_SITE: Tests
+* %INSTRUMENT_SITE: Tests_MCPL_etc
 *
 * A test instrument for MCPL_input
 *
@@ -15,7 +15,8 @@
 *
 * This is a unit test for the MCPL_input component.
 *
-* %Example: -n1e3 repeat=1 Detector: m1_I=7.9657e-08
+* %Example: -n1e3 repeat=1 MCPLFILE=voutput.mcpl.gz     Detector: m1_I=7.9657e-08
+* %Example: -n1e3 repeat=1 MCPLFILE=voutput_legacy.mcpl Detector: m1_I=7.9657e-08
 *
 * %Parameters
 *
@@ -23,24 +24,15 @@
 * E_smear: [1]      When repeating, make Gaussian MC choice on particle energy with spread E_smear * particle energy
 * pos_smear: [m]    When repeating, make uniform MC choice on sphere of radius pos_spear around particle position
 * dir_smear: [deg]  When repeating, make Gaussian MC choice in cone of opening dir_smear around particle direction
+* MCPLFILE: [str]   Input MCPL file.
 *
 * %End
 *******************************************************************************/
-DEFINE INSTRUMENT Test_MCPL_input(repeat=1,E_smear=0.1,pos_smear=0.001,dir_smear=0.01)
-DEPENDENCY "-DMCPLPATH=GETPATH(data/voutput.mcpl)"
+DEFINE INSTRUMENT Test_MCPL_input(repeat=1,E_smear=0.1,pos_smear=0.001,dir_smear=0.01, string MCPLFILE="voutput.mcpl")
 
 DECLARE
 %{
   long long ncount_i;
-  
-  #define QUOTE(name) #name
-  #define STR(macro) QUOTE(macro)
-
-  #ifndef MCPLPATH
-  #define MCPLPATH=/usr/share/mcxtrace/1.6/MCPL/voutput.mcpl
-  #endif
-
-  #define MCPLFILE STR(MCPLPATH)
 %}
 
 INITIALIZE

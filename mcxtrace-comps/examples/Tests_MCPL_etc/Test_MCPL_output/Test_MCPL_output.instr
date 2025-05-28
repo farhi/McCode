@@ -14,7 +14,7 @@
 *
 * This is a unit test for the MCPL_output component.
 *
-* %Example: Ncount=1e3 -n1e3 merge=0 Detector: m1_I=7.9657e-08
+* %Example: Ncount=1e3 -n1e3 Detector: m1_I=7.9657e-08
 *
 * %Parameters
 * merge: [1]  Flag to indicate if we should merge the output in case of MPI
@@ -22,7 +22,7 @@
 *
 * %End
 *******************************************************************************/
-DEFINE INSTRUMENT Test_MCPL_output(merge=1, Ncount=1e3)
+DEFINE INSTRUMENT Test_MCPL_output(Ncount=1e3)
 
 USERVARS
 %{
@@ -50,7 +50,7 @@ EXTEND %{
 
 /* the output ============================================================== */
 COMPONENT vout = MCPL_output(
-        filename="voutput", verbose=1, userflag="flag", userflagcomment="Photon Id", merge_mpi=merge)
+        filename="voutput", verbose=1, userflag="flag", userflagcomment="Photon Id")
 AT(0,0,0) RELATIVE PREVIOUS
 
 COMPONENT m1 = Monitor_nD(

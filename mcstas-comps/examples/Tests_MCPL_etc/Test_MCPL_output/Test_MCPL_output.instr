@@ -14,15 +14,14 @@
 *
 * This is a unit test for the MCPL_output component.
 *
-* %Example: Ncount=1e3 merge=0 Detector: m1_I=2.42284e+11
+* %Example: Ncount=1e3 Detector: m1_I=2.42284e+11
 *
 * %Parameters
-* merge:  [1]  Flag to indicate if we should merge the output in case of MPI
-* Ncount: [1]  Ncount defined via input parameter 
+* Ncount: [1]  Ncount defined via input parameter
 *
 * %End
 *******************************************************************************/
-DEFINE INSTRUMENT Test_MCPL_output(merge=1, Ncount=1e3)
+DEFINE INSTRUMENT Test_MCPL_output(Ncount=1e3)
 
 USERVARS
 %{
@@ -53,7 +52,8 @@ EXTEND %{
 
 /* the output ============================================================== */
 COMPONENT vout = MCPL_output(
-     filename="voutput", verbose=1, buffermax=Ncount, userflag="flag", userflagcomment="Neutron Id", merge_mpi=merge)
+     filename="voutput", verbose=1, buffermax=Ncount,
+     userflag="flag", userflagcomment="Neutron Id")
 AT(0,0,0) RELATIVE PREVIOUS
 
 COMPONENT m1 = Monitor_nD(
@@ -62,7 +62,7 @@ COMPONENT m1 = Monitor_nD(
 ) AT (0,0,0) ABSOLUTE
 
 COMPONENT m2 = Monitor_nD(
-  xwidth=0.2, yheight=0.2, 
+  xwidth=0.2, yheight=0.2,
   options="x y, parallel", bins=40
 ) AT (0,0,0) ABSOLUTE
 
@@ -75,16 +75,5 @@ COMPONENT m4 = Monitor_nD(
   xwidth=0.2, yheight=0.2,
   options="E limits=[0 82] parallel", bins=40
 ) AT (0,0,0) ABSOLUTE
-
-FINALLY %{
-#ifndef USE_MPI
-  char *outputfile = mcfull_file(COMP_GETPAR2(vout, filename),"mcpl.gz");
-  char cmdline[2048];
-  printf("\n---\nMCPL outputfile includes this binary blob:\n");
-  sprintf(cmdline,"mcpltool -bmccode_cmd_line %s",outputfile);
-  system(cmdline);
-  printf("\n---\n");
-#endif
-%}
 
 END

@@ -18,10 +18,10 @@
 * MCPL is short for Monte Carlo Particle List, and is a new format for sharing events
 * between e.g. MCNP(X), Geant4 and McStas.
 *
-* When used with MPI, the --ncount given on the commandline is overwritten by 
+* When used with MPI, the --ncount given on the commandline is overwritten by
 * #MPI nodes x #events in the file.
 *
-* %BUGS
+* Example: MCPL_input(filename=voutput,verbose=1,repeat_count=1,v_smear=0.1,pos_smear=0.001,dir_smear=0.01)
 *
 * %P
 * INPUT PARAMETERS
@@ -49,11 +49,17 @@ DEPENDENCY "@MCPLFLAGS@"
 SHARE
 %{
 #include <mcpl.h>
+#include <sys/stat.h>
 #ifdef _MSC_EXTENSIONS
 #include <windows.h>
 #define sleep Sleep
 #endif
 
+int mcplinput_file_exist(char *fn)
+{
+  struct stat buffer;
+  return (stat (fn, &buffer) == 0);
+}
 %}
 
 DECLARE
@@ -62,6 +68,8 @@ mcpl_file_t inputfile;
 long long nparticles;
 long long read_neutrons;
 long long used_neutrons;
+double weight_scale;
+char * resolved_filename;
 int repeat_cnt;
 int repeat_tot;
 int repeating;
@@ -83,6 +91,30 @@ DArray1d P;
 
 INITIALIZE
 %{
+
+    {
+      if ( !filename || !filename[0] ) {
+        fprintf(stderr,"ERROR(%s): Requires filename parameter.\n",
+                NAME_CURRENT_COMP);
+        exit(-1);
+      }
+      char * fn_mcpl = mcpl_name_helper( filename, 'M' );
+      char * fn_mcplgz = mcpl_name_helper( filename, 'G' );
+      if ( mcplinput_file_exist(fn_mcpl) ) {
+        if ( mcplinput_file_exist(fn_mcplgz) ) {
+          fprintf(stderr,"ERROR(%s): Can not resolve input file unambiguously"
+                  " since both %s and %s exist.\n",NAME_CURRENT_COMP,
+                  fn_mcpl, fn_mcplgz);
+          exit(-1);
+        }
+        resolved_filename = fn_mcpl;
+        free(fn_mcplgz);
+      } else {
+        resolved_filename = fn_mcplgz;
+        free(fn_mcpl);
+      }
+    }
+
     char line[256];
     long long ncount;
 
@@ -90,19 +122,31 @@ INITIALIZE
         fprintf(stderr,"Warning(%s): Nonsensical energy interval: E=[%g,%g]. Aborting.\n",NAME_CURRENT_COMP,Emin,Emax);
         exit(-1);
     }
+
     /* No need to check if the file opens correctly since mcpl will
      * abort internally if it cannot open the file.*/
-    inputfile = mcpl_open_file(filename);
+    inputfile = mcpl_open_file(resolved_filename);
+    double mcpl_ray_count = mcpl_hdr_stat_sum( inputfile, "initial_ray_count" );
+    if ( mcpl_ray_count == -2.0 ) {
+      //legacy format without ray count:
+      weight_scale = 1.0;
+    } else if ( !(mcpl_ray_count>0.0) ) {
+      fprintf(stderr, "ERROR: Input MCPL file has invalid initial_ray_count"
+              " (%g). Unable to determine weight scale.\n", mcpl_ray_count );
+      exit(1);
+    } else {
+      weight_scale = 1.0 / mcpl_ray_count;
+    }
 
-  
+
     if ( !(nparticles=mcpl_hdr_nparticles(inputfile)) ) {
         fprintf(stderr,"Warning(%s): MCPL-file reports no present particles. Foolishly trying to go on.\n",NAME_CURRENT_COMP);
         #ifndef OPENACC
         nparticles=ncount;
         #endif
     }else{
-        printf("Message(%s): MCPL file (%s) produced with %s.\n",NAME_CURRENT_COMP,filename,mcpl_hdr_srcname(inputfile));
-        printf("Message(%s): MCPL file (%s) contains %lu particles.\n",NAME_CURRENT_COMP,filename,(long unsigned)nparticles); 
+        printf("Message(%s): MCPL file (%s) produced with %s.\n",NAME_CURRENT_COMP,resolved_filename,mcpl_hdr_srcname(inputfile));
+        printf("Message(%s): MCPL file (%s) contains %lu particles.\n",NAME_CURRENT_COMP,resolved_filename,(long unsigned)nparticles);
     }
     mcset_ncount(nparticles);
 
@@ -124,14 +168,14 @@ INITIALIZE
 #endif
     MPI_MASTER(
       fprintf(stdout, "\n\n Warning: You are using MCPL_input with a repeat_count of %lu:\n - Minimum neutron count requested is %lu x %lu <= %lu",
-	      (long unsigned)repeat_count,(long unsigned)nparticles,
-	      (long unsigned)repeat_count,(long unsigned)repeat_cnt*(long unsigned)nparticles);
+            (long unsigned)repeat_count,(long unsigned)nparticles,
+            (long unsigned)repeat_count,(long unsigned)repeat_cnt*(long unsigned)nparticles);
     );
 
     char tmpstr[CHAR_BUF_LENGTH];
 #if defined (USE_MPI)
     sprintf(tmpstr, " x %i MPI nodes = %lu neutrons total\n",
-	    mpi_node_count,(long unsigned)mpi_node_count*(long unsigned)repeat_cnt*(long unsigned)nparticles);
+          mpi_node_count,(long unsigned)mpi_node_count*(long unsigned)repeat_cnt*(long unsigned)nparticles);
 #else
     sprintf(tmpstr, " neutrons total\n\n");
 #endif
@@ -144,7 +188,7 @@ INITIALIZE
 
     MPI_MASTER(
       if (verbose==1) {
-	printf("MCPL_input verbose mode - outputting data on the 10 first read neutrons in MCPL units:\n");
+      printf("MCPL_input verbose mode - outputting data on the 10 first read neutrons in MCPL units:\n");
       }
     );
     repeating = 0;
@@ -169,58 +213,48 @@ INITIALIZE
       printf("Initiating file read...\n");
       int loop;
       for (loop=0; loop < nparticles ; loop++) {
-	const mcpl_particle_t *particle;
-	particle=mcpl_read(inputfile);
-	if (particle) {
-	  if (particle->pdgcode==2112) {
-	    if (verbose && read_neutrons<11) {
-	      printf("id=%ld pdg=2112\tekin=%g MeV\tx=%g cm\ty=%g cm\tz=%g cm\tux=%g\tuy=%g\tuz=%g\tt=%g ms\tweight=%g\tpolx=%g\tpoly=%g\tpolz=%g\n",
-		     (long unsigned)read_neutrons, particle->ekin, particle->position[0], particle->position[1], particle->position[2],
-		     particle->direction[0], particle->direction[1], particle->direction[2], particle->time, particle->weight,
-		     particle->polarisation[0], particle->polarisation[1], particle->polarisation[2]);
-	    }
-	    /* check energy range*/
-	    if ( particle->ekin>Emin*1e-9 && particle->ekin<Emax*1e-9 ) {
-	      /* Particle energy in range */
-	      /*positions are in cm*/
-	      X[used_neutrons]=particle->position[0];
-	      Y[used_neutrons]=particle->position[1];
-	      Z[used_neutrons]=particle->position[2];
+      const mcpl_particle_t *particle;
+      particle=mcpl_read(inputfile);
+      if (particle) {
+        if (particle->pdgcode==2112) {
+          /* check energy range*/
+          if ( particle->ekin>Emin*1e-9 && particle->ekin<Emax*1e-9 ) {
+            /* Particle energy in range */
+            /*positions are in cm*/
+            X[used_neutrons]=particle->position[0];
+            Y[used_neutrons]=particle->position[1];
+            Z[used_neutrons]=particle->position[2];
 
-	      if(polarisationuse){
-		SX[used_neutrons]=(double)particle->polarisation[0];
-		SY[used_neutrons]=(double)particle->polarisation[1];
-		SZ[used_neutrons]=(double)particle->polarisation[2];
-	      }else{
-		SX[used_neutrons]=0;
-		SY[used_neutrons]=0;
-		SZ[used_neutrons]=0;
-	      }
+            if(polarisationuse){
+              SX[used_neutrons]=(double)particle->polarisation[0];
+              SY[used_neutrons]=(double)particle->polarisation[1];
+              SZ[used_neutrons]=(double)particle->polarisation[2];
+            }
 
-	      double d0=particle->direction[0];
-	      double d1=particle->direction[1];
-	      double d2=particle->direction[2];
+            double d0=particle->direction[0];
+            double d1=particle->direction[1];
+            double d2=particle->direction[2];
 
-	      VX[used_neutrons]=d0;
-	      VY[used_neutrons]=d1;
-	      VZ[used_neutrons]=d2;
+            VX[used_neutrons]=d0;
+            VY[used_neutrons]=d1;
+            VZ[used_neutrons]=d2;
 
-	      /*time in ms:*/
-	      T[used_neutrons] = particle->time;
-	      /*weight in unspecified units:*/
-	      P[used_neutrons] = particle->weight;
-	      E[used_neutrons] = particle->ekin;
-	      used_neutrons++;
-	    }
-	    read_neutrons++;
-	  }
-	}
+            /*time in ms:*/
+            T[used_neutrons] = particle->time;
+            /*weight in unspecified units:*/
+            P[used_neutrons] = particle->weight * weight_scale;
+            E[used_neutrons] = particle->ekin;
+            used_neutrons++;
+          }
+          read_neutrons++;
+        }
+      }
       }
       printf("Done reading MCPL file, found %ld neutrons\n",(long unsigned)read_neutrons);
       mcpl_close_file(inputfile);
       fprintf(stdout, "\n\n Warning: You are using MCPL_input with a repeat_count of %lu:\n - Neutron count requested is %lu x %lu <= %lu",
-	      (long unsigned)repeat_count,(long unsigned)read_neutrons,
-	      (long unsigned)repeat_count,(long unsigned)repeat_cnt*(long unsigned)read_neutrons);
+            (long unsigned)repeat_count,(long unsigned)read_neutrons,
+            (long unsigned)repeat_count,(long unsigned)repeat_cnt*(long unsigned)read_neutrons);
       fprintf(stdout, " neutrons total\n\n");
     }
     repeat_tot=repeat_cnt*mpi_cnt;
@@ -244,16 +278,16 @@ TRACE
     ncount=mcget_ncount();
     if (!particle) {
       if(repeat_cnt>1) {
-	/* Trigger rewind of the file and ABSORB to get the first neutron "again" */
-	repeating++;
-	mcpl_rewind(inputfile);
-	particle = mcpl_read(inputfile);
+      /* Trigger rewind of the file and ABSORB to get the first neutron "again" */
+      repeating++;
+      mcpl_rewind(inputfile);
+      particle = mcpl_read(inputfile);
 
-	MPI_MASTER(
-	  printf("MCPL inputfile %s rewound %i time(s)\n",filename,repeating);
+      MPI_MASTER(
+        printf("MCPL inputfile %s rewound %i time(s)\n",resolved_filename,repeating);
         );
       } else
-	ABSORB;
+      ABSORB;
     }
     if (particle->pdgcode!=2112) {
         /*Either no particle read, particle is not a neutron, or it has invalid energy - terminate to trigger next ray*/
@@ -267,15 +301,6 @@ TRACE
         ABSORB;
     }
     used_neutrons++;
-
-    MPI_MASTER(
-      if (verbose && used_neutrons<11) {
-        printf("id=%ld pdg=2112\tekin=%g MeV\tx=%g cm\ty=%g cm\tz=%g cm\tux=%g\tuy=%g\tuz=%g\tt=%g ms\tweight=%g\tpolx=%g\tpoly=%g\tpolz=%g\n",
-	     (long unsigned)read_neutrons, particle->ekin, particle->position[0], particle->position[1], particle->position[2],
-	     particle->direction[0], particle->direction[1], particle->direction[2], particle->time, particle->weight,
-	     particle->polarisation[0], particle->polarisation[1], particle->polarisation[2]);
-      }
-    );
   }
 #endif
   ncount = mcget_ncount();
@@ -307,14 +332,14 @@ TRACE
     tmpx *= pos_smear*rand01(); tmpy *= pos_smear*rand01(); tmpz *= pos_smear*rand01();
     x+=tmpx; y+=tmpy; z+=tmpz;
   }
-    
+
   if(polarisationuse){
     if(!preload) {
-      #ifndef OPENACC
+#ifndef OPENACC
       sx=particle->polarisation[0];
       sy=particle->polarisation[1];
       sz=particle->polarisation[2];
-      #endif
+#endif
     } else {
       sx=SX[i];
       sy=SY[i];
@@ -324,26 +349,26 @@ TRACE
     sx=sy=sz=0;
   }
 
-  /*ekin is in MeV, in McStas meV*/ 
+  /*ekin is in MeV, in McStas meV*/
   if (!preload) {
-    #ifndef OPENACC
+#ifndef OPENACC
     nrm = particle->ekin *1e9/VS2E;
-    #endif
+#endif
   } else {
     nrm = E[i] *1e9/VS2E;
   }
-  
+
   nrm = sqrt(nrm);
   if (ismpislave || repeating) {
     nrm *= (1+v_smear*randpm1());
   }
   double d0,d1,d2;
   if (!preload) {
-    #ifndef OPENACC
+#ifndef OPENACC
     d0=particle->direction[0];
     d1=particle->direction[1];
     d2=particle->direction[2];
-    #endif
+#endif
   } else {
     d0=VX[i];
     d1=VY[i];
@@ -356,17 +381,17 @@ TRACE
     randvec_target_circle(&d0, &d1, &d2, NULL, d0, d1, d2, sin(dir_smear*DEG2RAD));
     NORM(d0,d1,d2);
   }
-    
+
   vx=d0*nrm;
   vy=d1*nrm;
-  vz=d2*nrm;   
+  vz=d2*nrm;
 
   if (!preload) {
     #ifndef OPENACC
     /*time in ms:*/
     t=particle->time*1e-3;
     /*weight in unspecified units:*/
-    p=particle->weight;
+    p=particle->weight * weight_scale;
     #endif
   } else {
     t=T[i]*1e-3;
@@ -379,51 +404,53 @@ TRACE
 
 SAVE
 %{
-  #ifndef OPENACC
+#ifndef OPENACC
   if (!preload) {
-      mcpl_close_file(inputfile);
+    mcpl_close_file(inputfile);
   }
-  #endif
+#endif
 %}
 
 FINALLY
 %{
-    long long ncount;
+  long long ncount;
 
-    ncount=mcget_ncount();
+  ncount=mcget_ncount();
 
-    if (used_neutrons!=read_neutrons){
-        fprintf(stdout,"Message(%s): You have used %lu of %lu neutrons available in the MCPL file.\n",NAME_CURRENT_COMP,
+  if (used_neutrons!=read_neutrons){
+    fprintf(stdout,"Message(%s): You have used %lu of %lu neutrons available in the MCPL file.\n",NAME_CURRENT_COMP,
           (long unsigned)used_neutrons,(long unsigned)read_neutrons);
-    }
-    if (ncount != used_neutrons){
-        fprintf(stderr,"Warning (%s): You requested %lu neutrons from a file which contains %lu particles in general, of which only %lu are neutrons (within the wanted energy interval).\n"
-                "Please examine the recorded intensities carefully.\n",
+  }
+  if (ncount != used_neutrons){
+    fprintf(stderr,"Warning (%s): You requested %lu neutrons from a file which contains %lu particles in general, of which only %lu are neutrons (within the wanted energy interval).\n"
+            "Please examine the recorded intensities carefully.\n",
           NAME_CURRENT_COMP,(long unsigned)ncount,(long unsigned)nparticles,(long unsigned)used_neutrons);
-    }
+  }
 
-    destroy_darr1d(X);
-    destroy_darr1d(Y);
-    destroy_darr1d(Z);
-    destroy_darr1d(VX);
-    destroy_darr1d(VY);
-    destroy_darr1d(VZ);
-    destroy_darr1d(SX);
-    destroy_darr1d(SY);
-    destroy_darr1d(SZ);
-    destroy_darr1d(T);
-    destroy_darr1d(P);
+  destroy_darr1d(X);
+  destroy_darr1d(Y);
+  destroy_darr1d(Z);
+  destroy_darr1d(VX);
+  destroy_darr1d(VY);
+  destroy_darr1d(VZ);
+  destroy_darr1d(SX);
+  destroy_darr1d(SY);
+  destroy_darr1d(SZ);
+  destroy_darr1d(T);
+  destroy_darr1d(P);
+
+  free(resolved_filename);
 %}
 
 MCDISPLAY
 %{
-    multiline(5, 0.2,0.2,0.0, -0.2,0.2,0.0, -0.2,-0.2,0.0, 0.2,-0.2,0.0, 0.2,0.2,0.0);
-    /*M*/
-    multiline(5,-0.085,-0.085,0.0, -0.085,0.085,0.0, -0.045,-0.085,0.0, -0.005,0.085,0.0, -0.005,-0.085,0.0);
-    /*I*/
-    line(0.045,-0.085,0, 0.045, 0.085,0);    
-    line(0.005, 0.085,0, 0.085, 0.085,0);    
-    line(0.005,-0.085,0, 0.085,-0.085,0);    
+  multiline(5, 0.2,0.2,0.0, -0.2,0.2,0.0, -0.2,-0.2,0.0, 0.2,-0.2,0.0, 0.2,0.2,0.0);
+  /*M*/
+  multiline(5,-0.085,-0.085,0.0, -0.085,0.085,0.0, -0.045,-0.085,0.0, -0.005,0.085,0.0, -0.005,-0.085,0.0);
+  /*I*/
+  line(0.045,-0.085,0, 0.045, 0.085,0);
+  line(0.005, 0.085,0, 0.085, 0.085,0);
+  line(0.005,-0.085,0, 0.085,-0.085,0);
 %}
 
 END

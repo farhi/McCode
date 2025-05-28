@@ -137,13 +137,13 @@ jobs:
       working-directory: run_mcpl_input
       run: |
         copy ..\install\share\mcstas\resources\examples\Tests_MCPL_etc\Test_MCPL_input\Test_MCPL_input.instr test.instr
-        copy ..\install\share\mcstas\resources\examples\Tests_MCPL_etc\Test_MCPL_input\voutput.mcpl .
+        copy ..\install\share\mcstas\resources\examples\Tests_MCPL_etc\Test_MCPL_input\voutput.mcpl.gz .
 
     - name: Prepare MCPL_input_once instrument
       working-directory: run_mcpl_input_once
       run: |
         copy ..\install\share\mcstas\resources\examples\Tests_MCPL_etc\Test_MCPL_input_once\Test_MCPL_input_once.instr test.instr
-        copy ..\install\share\mcstas\resources\examples\Tests_MCPL_etc\Test_MCPL_input_once\voutput.mcpl .
+        copy ..\install\share\mcstas\resources\examples\Tests_MCPL_etc\Test_MCPL_input_once\voutput.mcpl.gz .
 
     - name: Prepare MCPL_output instrument
       working-directory: run_mcpl_output
