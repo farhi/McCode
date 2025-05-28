@@ -730,7 +730,9 @@ do { /* while (intersect) Loop over multiple scattering events */
   /* ========================================================================== */
   /*                             INTERACTION PROCESS                            */
   /* ========================================================================== */
-
+  xs[FLUORESCENCE]=xs[COMPTON]=xs[RAYLEIGH]=xs[TRANSMISSION]=xs[DIFFRACTION]=sigma_barn=0;
+  cum_xs_fluo[0] = cum_xs_Compton[0] = cum_xs_Rayleigh[0] = 0;
+  
   if (intersect) {
     double my_s;
     int    i_Z,i;
@@ -741,8 +743,6 @@ do { /* while (intersect) Loop over multiple scattering events */
     
     /* compute total scattering cross section for incoming photon energy Ei */
     /* compute each contribution XS */
-    xs[FLUORESCENCE]=xs[COMPTON]=xs[RAYLEIGH]=xs[TRANSMISSION]=xs[DIFFRACTION]=sigma_barn=0;
-    cum_xs_fluo[0] = cum_xs_Compton[0] = cum_xs_Rayleigh[0] = 0;
     if (!reuse) {
       for (i_Z=0; i_Z< compound->nElements; i_Z++) {
         int    Z   = compound->Elements[i_Z];
@@ -751,19 +751,19 @@ do { /* while (intersect) Loop over multiple scattering events */
 
         // get Fluorescence xs
         XRMC_CrossSections(Z, E, xs_Z, flag_kissel); // [barn/atom]
-        sigma_barn            += frac*CSb_Total(Z, E, NULL); // Photo+Compton+Rayleigh
         cum_xs_fluo[i_Z+1]     = cum_xs_fluo[i_Z]    +frac*xs_Z[FLUORESCENCE];
         cum_xs_Compton[i_Z+1]  = cum_xs_Compton[i_Z] +frac*xs_Z[COMPTON];
         cum_xs_Rayleigh[i_Z+1] = cum_xs_Rayleigh[i_Z]+frac*xs_Z[RAYLEIGH];
         for (i=0; i<3; i++) { xs[i] += frac*xs_Z[i]; }
       } // for Z in compound
+      for (i=0; i<3; i++) sigma_barn += xs[i]; // total XS
       
       // store values into cache for SPLIT
       if (!event_counter) {
         for (i_Z=0; i_Z< compound->nElements; i_Z++) {
-          reuse_cum_xs_fluo[i_Z+1]     = cum_xs_fluo[i_Z+1];
-          reuse_cum_xs_Compton[i_Z+1]  = cum_xs_Compton[i_Z+1];
-          reuse_cum_xs_Rayleigh[i_Z+1] = cum_xs_Rayleigh[i_Z+1];
+          reuse_cum_xs_fluo[i_Z]     = cum_xs_fluo[i_Z];
+          reuse_cum_xs_Compton[i_Z]  = cum_xs_Compton[i_Z];
+          reuse_cum_xs_Rayleigh[i_Z] = cum_xs_Rayleigh[i_Z];
         }
         reuse_sigma_barn = sigma_barn;
       }
@@ -771,15 +771,17 @@ do { /* while (intersect) Loop over multiple scattering events */
     } else {
       // reuse cached values (SPLIT), event_counter=0
       for (i_Z=0; i_Z< compound->nElements; i_Z++) {
-        cum_xs_fluo[i_Z+1]     = reuse_cum_xs_fluo[i_Z+1];
-        cum_xs_Compton[i_Z+1]  = reuse_cum_xs_Compton[i_Z+1];
-        cum_xs_Rayleigh[i_Z+1] = reuse_cum_xs_Rayleigh[i_Z+1];
-        xs[FLUORESCENCE]      += reuse_cum_xs_fluo[i_Z+1];
-        xs[COMPTON]           += reuse_cum_xs_Compton[i_Z+1];
-        xs[RAYLEIGH]          += reuse_cum_xs_Rayleigh[i_Z+1];
+        cum_xs_fluo[i_Z]     = reuse_cum_xs_fluo[i_Z];
+        cum_xs_Compton[i_Z]  = reuse_cum_xs_Compton[i_Z];
+        cum_xs_Rayleigh[i_Z] = reuse_cum_xs_Rayleigh[i_Z];
+        xs[FLUORESCENCE]      += reuse_cum_xs_fluo[i_Z];
+        xs[COMPTON]           += reuse_cum_xs_Compton[i_Z];
+        xs[RAYLEIGH]          += reuse_cum_xs_Rayleigh[i_Z];
       }
       sigma_barn = reuse_sigma_barn;
     }
+//    printf("DEBUG: pi=%g p=%g ; ki=%g k=%g ; xs=[%g %g %g] type=FOLLOW sigma_barn=%g\n",
+//        pi, p, ki, k, xs[0], xs[1], xs[2], sigma_barn);
     
     /* probability to absorb/scatter */
     my_s   = rho*100*sigma_barn; /* mu, 100: convert from barns to fm^2. my_s in [1/m] */
@@ -790,7 +792,7 @@ do { /* while (intersect) Loop over multiple scattering events */
     p_scatt = 1 - p_trans;       /* portion of beam which scatters */
     
     /* force a given fraction of the beam to scatter */
-    if (p_interact>0 && p_interact<=1) {
+    if (!event_counter && p_interact>0 && p_interact<=1) {
       /* we force a portion of the beam to interact */
       /* This is used to improve statistics */
       mc_trans = 1-p_interact;
@@ -819,9 +821,9 @@ do { /* while (intersect) Loop over multiple scattering events */
       PROP_DL(d_path);
       /* attenuate beam by portion which is scattered (and left along) */
       p *= p_trans;
-      if (p_interact>0 && p_interact<=1) p /= mc_trans;
-      // WARNING: we have some TRANSMISSION p/pi >> 1:
-      // must not /mc_trans when event > 1 or force_transmit !!!
+      if (!event_counter && p_interact>0 && p_interact<=1) p /= mc_trans;
+//      printf("DEBUG: pi=%g p=%g ; ki=%g k=%g ; xs=[%g %g %g] type=TRANSMIT\n",
+//        pi, p, ki, k, xs[0], xs[1], xs[2]);
       break; // end while (intersect)
     }
     
@@ -833,10 +835,6 @@ do { /* while (intersect) Loop over multiple scattering events */
     double theta, dsigma;
     double Ef, dE;
     double kf=k, kf_x, kf_y, kf_z;  // next particle direction
-    
-    /* correct for XS total(photo+Compton+Rayleigh) > sum(fluo+Compton+Rayleigh) */
-    dsigma = (xs[FLUORESCENCE]+xs[RAYLEIGH]+xs[COMPTON])/sigma_barn;
-    if (dsigma < 1) p *= dsigma; // < 1
 
     /* MC choose process from cross sections 'xs': fluo, Rayleigh, Compton  */
     type = XRMC_SelectInteraction(xs, COMPTON+1, rand01()); // up to COMPTON
@@ -936,6 +934,10 @@ do { /* while (intersect) Loop over multiple scattering events */
     if (order && (event_counter >= order || p/pi < 1e-15)) { force_transmit=1; }
  
   } // if intersect (scatter)
+  
+//  if (type>=0)
+//  printf("DEBUG: pi=%g p=%g ; ki=%g k=%g ; xs=[%g %g %g] type=%i sigma_barn=%g %s\n",
+//    pi, p, ki, k, xs[0], xs[1], xs[2], type, sigma_barn, reuse ? "SPLIT" : "");
 
 } while(intersect); /* end do (intersect) (multiple scattering loop) */
 

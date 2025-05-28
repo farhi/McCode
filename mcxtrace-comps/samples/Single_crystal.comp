@@ -1688,7 +1688,7 @@ TRACE
       {
         p *= p_trans/mc_trans;
         intersect=0;
-        if (powder) { /* orientation of crystallite is longer random */
+        if (powder) { /* orientation of crystallite is no longer random */
           randderotate(&kx, &ky, &kz, Alpha, Beta, Gamma);
         }
 
