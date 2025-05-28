@@ -563,7 +563,7 @@ INITIALIZE %{
   
   // cached variables set to 0 (for SPLIT)
   reuse_nb=0;
-  reuse_ki=reuse_l0=reuse_l3=reuse_sigma_barn=0;
+  reuse_ki=reuse_l0=reuse_l1=reuse_l2=reuse_l3=reuse_sigma_barn=0;
   reuse_cum_xs_fluo              = create_darr1d(compound->nElements+1);
   reuse_cum_xs_Compton           = create_darr1d(compound->nElements+1);
   reuse_cum_xs_Rayleigh          = create_darr1d(compound->nElements+1);
@@ -575,8 +575,8 @@ TRACE %{
 int    intersect=0;       /* flag to continue/stop */
 int    reuse    =0;       /* flag raised when reusing (SPLIT) */
 int    type     =-1;      /* type of interaction */
-double l0=0,  l1=0,  l2=0,  l3=0; /* times for intersections */
-double dl0=0, dl1=0, dl2=0, dl=0; /* time intervals */
+double l0,  l1,  l2,  l3; /* distances for intersections */
+double dl0, dl1, dl2, dl; /* distance intervals */
 int    flag_concentric = 0;
 int    flag_ishollow   = 0;
 int    event_counter   = 0;         /* scattering event counter (multiple fluorescence) */
@@ -604,6 +604,7 @@ pi = p;     // used to test for multiple fluo weighting and order cutoff
 do { /* while (intersect) Loop over multiple scattering events */
 
   // test for a SPLIT event (same particle comes in)
+  l0=l1=l2=l3=dl0=dl1=dl2=0;
   if (!event_counter && fabs(reuse_ki - ki) < 1e-15) {
     reuse     = 1;
     reuse_nb++;
@@ -673,6 +674,7 @@ do { /* while (intersect) Loop over multiple scattering events */
         else if (shape==1 && box_intersect(&l1,&l2, x,y,z,kx,ky,kz, xwidth, yheight, zdepth))
           flag_ishollow=1;
       }
+      if (l3 > 1000) l3=0;              // we passed the sample, far away
       if (!flag_ishollow) l1 = l2 = l3; /* no empty space inside */
     } /* if intersect */
 
@@ -701,9 +703,9 @@ do { /* while (intersect) Loop over multiple scattering events */
       /* no propagation, stay inside */
     }
 
-    dl0=l1-(l0 > 0 ? l0 : 0); /* Time in first part of hollow/cylinder/box */
-    dl1=l2-(l1 > 0 ? l1 : 0); /* Time in hole */
-    dl2=l3-(l2 > 0 ? l2 : 0); /* Time in 2nd part of hollow cylinder */
+    dl0=l1-(l0 > 0 ? l0 : 0); /* Distance in first part of hollow/cylinder/box */
+    dl1=l2-(l1 > 0 ? l1 : 0); /* Distance in hole */
+    dl2=l3-(l2 > 0 ? l2 : 0); /* Distance in 2nd part of hollow cylinder */
 
     if (dl0 < 0) dl0 = 0;
     if (dl1 < 0) dl1 = 0;
@@ -785,7 +787,6 @@ do { /* while (intersect) Loop over multiple scattering events */
     
     /* Proba of transmission/interaction along length d_path */    
     p_trans = exp(-my_s*d_path); /* probability to not-interact (transmit) */
-    //printf("sigma_barn=%g p_trans=%g\n", sigma_barn, p_trans);
     p_scatt = 1 - p_trans;       /* portion of beam which scatters */
     
     /* force a given fraction of the beam to scatter */
@@ -799,7 +800,7 @@ do { /* while (intersect) Loop over multiple scattering events */
     mc_scatt = 1 - mc_trans; /* portion of beam to scatter (or force to) */
     if (mc_scatt <= 0) ABSORB;
     
-    if (!force_transmit && mc_scatt > 0 && (mc_scatt >= 1 || rand01() < mc_scatt)) { 
+    if (!force_transmit && mc_scatt > 0 && (mc_scatt >= 1 || rand01() < mc_scatt)) {
       /* we "scatter" with one of the interaction processes */
         
       dl = -log(1 - rand0max((1 - exp(-my_s*d_path)))) / my_s; /* length */
@@ -813,12 +814,14 @@ do { /* while (intersect) Loop over multiple scattering events */
       
     } else { // force_transmit
       /* we go through the material without interaction, and exit */
-      if (type <0) type = TRANSMISSION; // 3 transmission
+      if (type <0) type = TRANSMISSION; // transmission
       intersect = 0;
       PROP_DL(d_path);
       /* attenuate beam by portion which is scattered (and left along) */
       p *= p_trans;
       if (p_interact>0 && p_interact<=1) p /= mc_trans;
+      // WARNING: we have some TRANSMISSION p/pi >> 1:
+      // must not /mc_trans when event > 1 or force_transmit !!!
       break; // end while (intersect)
     }
     
@@ -826,7 +829,7 @@ do { /* while (intersect) Loop over multiple scattering events */
 
   if (intersect) { /* scattering event */
     int    i_Z, Z;
-    double solid_angle;
+    double solid_angle=0;
     double theta, dsigma;
     double Ef, dE;
     double kf=k, kf_x, kf_y, kf_z;  // next particle direction
@@ -834,7 +837,6 @@ do { /* while (intersect) Loop over multiple scattering events */
     /* correct for XS total(photo+Compton+Rayleigh) > sum(fluo+Compton+Rayleigh) */
     dsigma = (xs[FLUORESCENCE]+xs[RAYLEIGH]+xs[COMPTON])/sigma_barn;
     if (dsigma < 1) p *= dsigma; // < 1
-    // NOTE: dsigma may be > 1 ???
 
     /* MC choose process from cross sections 'xs': fluo, Rayleigh, Compton  */
     type = XRMC_SelectInteraction(xs, COMPTON+1, rand01()); // up to COMPTON
@@ -874,13 +876,12 @@ do { /* while (intersect) Loop over multiple scattering events */
       randvec_target_circle(&kf_x, &kf_y, &kf_z, &solid_angle, aim_x, aim_y, aim_z, focus_r);
     }
     p *= solid_angle/(4*PI); // correct for selected solid-angle
+
     NORM(kf_x, kf_y, kf_z);  // normalize the outout direction |kf|=1
     
     // determine final energyn (kf)
     switch (type) {
       case FLUORESCENCE: /* 0 Fluo: choose line */
-        n_fluo++;
-        p_fluo += p;
         Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel, rand01()); // dE full-width in keV
         if (dE) {
           dE /= 2;  // half-width
@@ -899,23 +900,25 @@ do { /* while (intersect) Loop over multiple scattering events */
           /*unpolarized light in - means an effective reduction according to only theta*/
           p *= (1+cos(theta)*cos(theta))*0.5;
         }
+        n_fluo++;
+        p_fluo += p;
         break;
         
       case RAYLEIGH:     /* 1 Rayleigh: Coherent, elastic */
-        n_Rayleigh++;
-        p_Rayleigh += p;
         theta      = acos(scalar_prod(kf_x,kf_y, kf_z, kx,ky,kz)/k);
         dsigma     = DCSb_Rayl(Z,  E, theta, NULL); // [barn/at/st]
         p         *= 4*PI*dsigma/xs[RAYLEIGH];
+        n_Rayleigh++;
+        p_Rayleigh += p;
         break;
       
       case COMPTON:      /* 2 Compton: Incoherent: choose final energy */
-        n_Compton++;
-        p_Compton += p;
         theta      = acos(scalar_prod(kf_x,kf_y, kf_z, kx,ky,kz)/k);
         dsigma     = DCS_Compt(Z,  E, theta, NULL); // [barn/at/st]
         kf         = ComptonEnergy(E, theta, NULL)*E2K; /* XRayLib, fraction of emc2=511 keV */
         p         *= 4*PI*dsigma/xs[COMPTON];
+        n_Compton++;
+        p_Compton += p;
         break;
     }
     
@@ -935,6 +938,8 @@ do { /* while (intersect) Loop over multiple scattering events */
   } // if intersect (scatter)
 
 } while(intersect); /* end do (intersect) (multiple scattering loop) */
+
+
 
 %}
 
