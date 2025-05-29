@@ -760,7 +760,7 @@ do { /* while (intersect) Loop over multiple scattering events */
       
       // store values into cache for SPLIT
       if (!event_counter) {
-        for (i_Z=0; i_Z< compound->nElements; i_Z++) {
+        for (i_Z=0; i_Z< compound->nElements+1; i_Z++) {
           reuse_cum_xs_fluo[i_Z]     = cum_xs_fluo[i_Z];
           reuse_cum_xs_Compton[i_Z]  = cum_xs_Compton[i_Z];
           reuse_cum_xs_Rayleigh[i_Z] = cum_xs_Rayleigh[i_Z];
@@ -770,7 +770,7 @@ do { /* while (intersect) Loop over multiple scattering events */
 
     } else {
       // reuse cached values (SPLIT), event_counter=0
-      for (i_Z=0; i_Z< compound->nElements; i_Z++) {
+      for (i_Z=0; i_Z< compound->nElements+1; i_Z++) {
         cum_xs_fluo[i_Z]     = reuse_cum_xs_fluo[i_Z];
         cum_xs_Compton[i_Z]  = reuse_cum_xs_Compton[i_Z];
         cum_xs_Rayleigh[i_Z] = reuse_cum_xs_Rayleigh[i_Z];
