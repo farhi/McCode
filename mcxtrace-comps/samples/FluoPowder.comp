@@ -432,7 +432,7 @@ INITIALIZE %{
 
   // cached variables set to 0 (for SPLIT)
   reuse_nb=0;
-  reuse_ki=reuse_l0=reuse_l3=reuse_sigma_barn=0;
+  reuse_ki=reuse_l0=reuse_l1=reuse_l2=reuse_l3=reuse_sigma_barn=0;
   reuse_cum_xs_fluo              = create_darr1d(compound->nElements+1);
   reuse_cum_xs_Compton           = create_darr1d(compound->nElements+1);
   reuse_cum_xs_Rayleigh          = create_darr1d(compound->nElements+1);
@@ -444,8 +444,8 @@ TRACE %{
 int    intersect=0;       /* flag to continue/stop */
 int    reuse    =0;       /* flag raised when reusing (SPLIT) */
 int    type     =-1;      /* type of interaction */
-double l0,  l1,  l2,  l3; /* times for intersections */
-double dl0, dl1, dl2, dl; /* time intervals */
+double l0,  l1,  l2,  l3; /* distances for intersections */
+double dl0, dl1, dl2, dl; /* distance intervals */
 int    flag_concentric = 0;
 int    flag_ishollow   = 0;
 int    event_counter   = 0;         /* scattering event counter (multiple fluorescence) */
@@ -477,6 +477,7 @@ pi = p;      // used to test for multiple fluo weighting and order cutoff
 do { /* while (intersect) Loop over multiple scattering events */
 
   // test for a SPLIT event (same particle comes in)
+  l0=l1=l2=l3=dl0=dl1=dl2=0;
   if (!event_counter && fabs(reuse_ki - ki) < 1e-15) {
     reuse     = 1;
     reuse_nb++;
@@ -546,6 +547,7 @@ do { /* while (intersect) Loop over multiple scattering events */
         else if (shape==1 && box_intersect(&l1,&l2, x,y,z,kx,ky,kz, xwidth, yheight, zdepth))
           flag_ishollow=1;
       }
+      if (l3 > 1000) l3=0;              // we passed the sample, far away
       if (!flag_ishollow) l1 = l2 = l3; /* no empty space inside */
     } /* if intersect */
 
@@ -574,9 +576,9 @@ do { /* while (intersect) Loop over multiple scattering events */
       /* no propagation, stay inside */
     }
 
-    dl0=l1-(l0 > 0 ? l0 : 0); /* Time in first part of hollow/cylinder/box */
-    dl1=l2-(l1 > 0 ? l1 : 0); /* Time in hole */
-    dl2=l3-(l2 > 0 ? l2 : 0); /* Time in 2nd part of hollow cylinder */
+    dl0=l1-(l0 > 0 ? l0 : 0); /* Distance in first part of hollow/cylinder/box */
+    dl1=l2-(l1 > 0 ? l1 : 0); /* Distance in hole */
+    dl2=l3-(l2 > 0 ? l2 : 0); /* Distance in 2nd part of hollow cylinder */
 
     if (dl0 < 0) dl0 = 0;
     if (dl1 < 0) dl1 = 0;
@@ -600,7 +602,9 @@ do { /* while (intersect) Loop over multiple scattering events */
   /* ========================================================================== */
   /*                             INTERACTION PROCESS                            */
   /* ========================================================================== */
-
+  xs[FLUORESCENCE]=xs[COMPTON]=xs[RAYLEIGH]=xs[TRANSMISSION]=xs[DIFFRACTION]=sigma_barn=0;
+  cum_xs_fluo[0] = cum_xs_Compton[0] = cum_xs_Rayleigh[0] = 0;
+  
   if (intersect) {
     double my_s;
     int    i_Z,i;
@@ -611,9 +615,6 @@ do { /* while (intersect) Loop over multiple scattering events */
 
     /* compute total scattering cross section for incoming photon energy Ei */
     /* compute each contribution XS */
-    xs[FLUORESCENCE]=xs[COMPTON]=xs[RAYLEIGH]=xs[TRANSMISSION]=xs[DIFFRACTION]=sigma_barn=0;
-    cum_xs_fluo[0] = cum_xs_Compton[0] = cum_xs_Rayleigh[0] = 0;
-
     if (!reuse) {
       for (i_Z=0; i_Z< compound->nElements; i_Z++) {
         int    Z   = compound->Elements[i_Z];
@@ -622,12 +623,12 @@ do { /* while (intersect) Loop over multiple scattering events */
 
         // get Fluorescence xs
         XRMC_CrossSections(Z, E, xs_Z, flag_kissel); // [barn/atom]
-        sigma_barn            += frac*CSb_Total(Z, E, NULL); // Fluo+Compton+Rayleigh
         cum_xs_fluo[i_Z+1]     = cum_xs_fluo[i_Z]    +frac*xs_Z[FLUORESCENCE];
         cum_xs_Compton[i_Z+1]  = cum_xs_Compton[i_Z] +frac*xs_Z[COMPTON];
         cum_xs_Rayleigh[i_Z+1] = cum_xs_Rayleigh[i_Z]+frac*xs_Z[RAYLEIGH];
         for (i=0; i<3; i++) { xs[i] += frac*xs_Z[i]; }
       } // for Z in compound
+      for (i=0; i<3; i++) sigma_barn += xs[i]; // total XS
 
       if (flag_powder) {
         // we add the diffraction XS
@@ -646,31 +647,32 @@ do { /* while (intersect) Loop over multiple scattering events */
 
       // store values into cache for SPLIT
       if (!event_counter) {
-        for (i_Z=0; i_Z< compound->nElements; i_Z++) {
-          reuse_cum_xs_fluo[i_Z+1]     = cum_xs_fluo[i_Z+1];
-          reuse_cum_xs_Compton[i_Z+1]  = cum_xs_Compton[i_Z+1];
-          reuse_cum_xs_Rayleigh[i_Z+1] = cum_xs_Rayleigh[i_Z+1];
+        for (i_Z=0; i_Z< compound->nElements+1; i_Z++) {
+          reuse_cum_xs_fluo[i_Z]     = cum_xs_fluo[i_Z];
+          reuse_cum_xs_Compton[i_Z]  = cum_xs_Compton[i_Z];
+          reuse_cum_xs_Rayleigh[i_Z] = cum_xs_Rayleigh[i_Z];
         }
-        reuse_cum_xs_diffraction  = xs[DIFFRACTION];
         reuse_sigma_barn          = sigma_barn;
-        reuse_Nq                  = Nq;
-        reuse_my_s_k2_sum         = my_s_k2_sum;
+        if (flag_powder) {
+          reuse_cum_xs_diffraction  = xs[DIFFRACTION];
+          reuse_Nq                  = Nq;
+          reuse_my_s_k2_sum         = my_s_k2_sum;
+        }
       }
 
     } else {
       // reuse cached values (SPLIT)
-      for (i_Z=0; i_Z< compound->nElements; i_Z++) {
-        cum_xs_fluo[i_Z+1]     = reuse_cum_xs_fluo[i_Z+1];
-        cum_xs_Compton[i_Z+1]  = reuse_cum_xs_Compton[i_Z+1];
-        cum_xs_Rayleigh[i_Z+1] = reuse_cum_xs_Rayleigh[i_Z+1];
-        xs[FLUORESCENCE]      += reuse_cum_xs_fluo[i_Z+1];
-        xs[COMPTON]           += reuse_cum_xs_Compton[i_Z+1];
-        xs[RAYLEIGH]          += reuse_cum_xs_Rayleigh[i_Z+1];
-        xs[DIFFRACTION]        = reuse_cum_xs_diffraction;
+      for (i_Z=0; i_Z< compound->nElements+1; i_Z++) {
+        cum_xs_fluo[i_Z]     = reuse_cum_xs_fluo[i_Z];
+        cum_xs_Compton[i_Z]  = reuse_cum_xs_Compton[i_Z];
+        cum_xs_Rayleigh[i_Z] = reuse_cum_xs_Rayleigh[i_Z];
+        xs[FLUORESCENCE]      += reuse_cum_xs_fluo[i_Z];
+        xs[COMPTON]           += reuse_cum_xs_Compton[i_Z];
+        xs[RAYLEIGH]          += reuse_cum_xs_Rayleigh[i_Z];
       }
-
       sigma_barn   = reuse_sigma_barn;
       if (flag_powder) {
+        xs[DIFFRACTION]        = reuse_cum_xs_diffraction;
         my_s_k2_sum= line_info.my_s_k2_sum=reuse_my_s_k2_sum;
         Nq         = line_info.Nq         =reuse_Nq;
       }
@@ -686,7 +688,7 @@ do { /* while (intersect) Loop over multiple scattering events */
     p_scatt = 1 - p_trans;       /* portion of beam which scatters */
 
     /* force a given fraction of the beam to scatter */
-    if (p_interact>0 && p_interact<=1) {
+    if (!event_counter && p_interact>0 && p_interact<=1) {
       /* we force a portion of the beam to interact */
       /* This is used to improve statistics */
       mc_trans = 1-p_interact;
@@ -707,12 +709,12 @@ do { /* while (intersect) Loop over multiple scattering events */
 
     } else { // force_transmit
       /* we go through the material without interaction, and exit */
-      if (type <0) type = TRANSMISSION; // 3 transmission
+      if (type <0) type = TRANSMISSION; // transmission
       intersect = 0;
       PROP_DL(d_path);
       /* attenuate beam by portion which is scattered (and left along) */
       p *= p_trans;
-      if (p_interact>0 && p_interact<=1) p /= mc_trans;
+      if (!event_counter && p_interact>0 && p_interact<=1) p /= mc_trans;
       break; // end while (intersect)
     }
 
@@ -838,8 +840,6 @@ do { /* while (intersect) Loop over multiple scattering events */
     // determine final energy
     switch (type) {
       case FLUORESCENCE: /* 0 Fluo: choose line */
-        n_fluo++;
-        p_fluo += p;
         Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel, rand01()); // dE full-width in keV
         if (dE) {
           dE /= 2;  // half-width
@@ -858,6 +858,8 @@ do { /* while (intersect) Loop over multiple scattering events */
           /*unpolarized light in - means an effective reduction according to only theta*/
           p *= (1+cos(theta)*cos(theta))*0.5;
         }
+        n_fluo++;
+        p_fluo += p;
         break;
 
       case RAYLEIGH:     /* 1 Rayleigh: Coherent, elastic    */

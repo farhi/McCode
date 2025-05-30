@@ -877,7 +877,7 @@ do { /* while (intersect) Loop over multiple scattering events */
 
     NORM(kf_x, kf_y, kf_z);  // normalize the outout direction |kf|=1
     
-    // determine final energyn (kf)
+    // determine final energy (kf)
     switch (type) {
       case FLUORESCENCE: /* 0 Fluo: choose line */
         Ef      = XRMC_SelectFluorescenceEnergy(Z, E, &dE, flag_kissel, rand01()); // dE full-width in keV
