@@ -36,12 +36,12 @@
 * 14.92    | M1 bent mirror with Rh/Si coating. Focuses vertically the beam on the DCM. length 1300 mm, width 100 mm. 2.4 mrad incidence above 19 keV, 3 mrad in 12.5-19 keV, and 5 mrad in 6.5-12.5 keV, and 6 mrad below.
 * 17.462   | a Si(111) DCM. First crystal is 200x100 mm flat at 2.54 m from M1; 2nd is bent 70x100 mm to focus the beam horizontally.
 * 19.28    | M2 bent mirror with Rh coating, 1300x100 mm. Focuses vertically the beam. At 1.817 from DCM.
-* 27.752   | _secondary slits when using the KB. We ignore them here_.
-* 31.227   | _a KB mirror set M3/M4 for micro focusing. Optional, see the practical 5 "Optics"._
+* 27.752   | secondary slits when using the KB. We ignore them here.
+* 31.227   | a KB mirror set M3/M4 for micro focusing. We ignore them here.
 * 31.45    | sample stage with e.g. Fluorescence and/or PowderN components. At 13.99 from DCM.
 * 32.09    | a set of detectors (transmission, XRD and XRF), radius 654 mm
 *
-* %Example: E0=13 Detector: xpad_I=1.7e6
+* %Example: E0=13 Detector: xpad_I=3.2e+06
 *
 * %Parameters
 * E0:       [keV]  Central energy of the interval to be looked at
@@ -261,7 +261,7 @@ GROUP samples
 // We ignore it here.
 COMPONENT fluo = Fluorescence(
   material=sample,
-  xwidth = 0.001, yheight=0.01, zdepth=5e-6, // flag_rayleigh=0,
+  xwidth = 0.001, yheight=0.01, zdepth=5e-6,
   p_interact=1, target_z=1, focus_aw=180, focus_ah=5)
 AT (0,0,0) RELATIVE sample_stage
 GROUP samples
@@ -285,7 +285,4 @@ COMPONENT xpad = Monitor_nD(radius=.645, yheight = 0.05,
 WHEN (0.75 * E0 < K2E*sqrt(kx*kx+ky*ky+kz*kz)) // model detector energy discrimination
 AT (0,0,0) RELATIVE sample_stage
 
-
-
 END
-
