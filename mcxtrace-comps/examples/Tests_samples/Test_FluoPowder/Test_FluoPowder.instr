@@ -23,11 +23,11 @@
 * - index=4: use Fluorescence         (no diffraction)
 * - index=5: use Fluorescence+PowderN (under estimates contributions)
 *
-* %Example: Test_FluoPowder.instr E0=15 index=1 Detector: Sph_mon_I=2.23119e-18
-* %Example: Test_FluoPowder.instr E0=15 index=2 Detector: Sph_mon_I=1.89376e-18
-* %Example: Test_FluoPowder.instr E0=15 index=3 Detector: Sph_mon_I=2.83261e-18
-* %Example: Test_FluoPowder.instr E0=15 index=4 Detector: Sph_mon_I=6.0176e-19
-* %Example: Test_FluoPowder.instr E0=15 index=5 Detector: Sph_mon_I=2.11144e-18
+* %Example: Test_FluoPowder.instr E0=15 index=1 Detector: Sph_mon_pow_I=2.23591e-18
+* %Example: Test_FluoPowder.instr -n 1e5 E0=15 index=2 Detector: Sph_mon_pow_I=1.89664e-18
+* %Example: Test_FluoPowder.instr E0=15 index=3 Detector: Sph_mon_I=2.8904e-18
+* %Example: Test_FluoPowder.instr E0=15 index=4 Detector: Sph_mon_flu_I=6.18074e-19
+* %Example: Test_FluoPowder.instr E0=15 index=5 Detector: Sph_mon_I=1.76094e-18
 *
 * %Parameters
 * E0:          [keV]  Source mean energy of xrays.
