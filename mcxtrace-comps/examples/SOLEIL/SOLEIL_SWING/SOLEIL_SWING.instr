@@ -31,7 +31,7 @@
 * 32       | Sample location
 * 32.5-39  | Detector 162.5 x 155.2 mm
 *
-* Example: E0=13 Detector: Eiger4M_I=128554
+* Example: E0=13 Detector: Eiger4M_I=7.5752e+06
 *
 * %Parameters
 * E0:             [keV]  Nominal energy at the Wiggler.
@@ -48,7 +48,7 @@
 *
 * %End
 *******************************************************************************/
-DEFINE INSTRUMENT SOLEIL_SIXS(E0=13, dE=0.1, dcm_theta=0, 
+DEFINE INSTRUMENT SOLEIL_SWING(E0=13, dE=0.1, dcm_theta=0,
   hfm_radius=495, vfm_radius=859, mirror_grazing_angle=4e-3,
   string sample="6lyz.pdb", sample_det=2)
 
@@ -57,6 +57,7 @@ DECLARE
   double dcm_gap;
   double Lambda;
   double Ki;
+  int    flag_sample_sphere;
 %}
 
 USERVARS
@@ -85,9 +86,14 @@ INITIALIZE
   MPI_MASTER(
     printf("%s: E0=%g [keV] Ki=%g [1/Angs] Lambda=%g [Angs] Monochromator dcm_theta=%g [deg]\n", 
       NAME_INSTRUMENT, E0, dcm_theta, Ki, Lambda);
-    printf("%s: Using sample %s\n",
-      NAME_INSTRUMENT,
-      !strlen(sample) || !strcmp(sample,"0") || !strcmp(sample,"NULL") ? "Sphere" : sample);
+    if (!strlen(sample) || !strcmp(sample,"0") || !strcmp(sample,"NULL")) {
+      flag_sample_sphere=1;
+      printf("%s: Using ideal sample %s\n", NAME_INSTRUMENT, "Sphere colloid");
+      strcpy(sample, "6lyz.pdb"); // avoid stop at init of SAXSPDBFast
+    } else {
+      flag_sample_sphere=0;
+      printf("%s: Using PDB sample %s\n", NAME_INSTRUMENT, sample);
+    }
   );
   if (fabs(dE/E0)>0.1) dE = 3e-2*E0;
 %}
@@ -221,7 +227,7 @@ COMPONENT sample_test = Saxs_spheres(
     R = 100, Phi = 0.1, Delta_rho = 1.6,
     yheight = 1e-3, radius = 0.25e-3, focus_xw = 1,
     focus_yh = 1, sphere_mtrl="Be.txt")
-WHEN( !strlen(sample) || !strcmp(sample,"0") || !strcmp(sample,"NULL") )
+WHEN( flag_sample_sphere )
 AT (0,0,0) RELATIVE sample_stage
 EXTEND %{
   if (!SCATTERED) ABSORB;
@@ -233,10 +239,10 @@ COMPONENT sample = SAXSPDBFast(
   zdepth  = 0.01,
   SampleToDetectorDistance = sample_det,
   DetectorRadius = 0.16*1.41, 
-  PDBFilepath = !strlen(sample) || !strcmp(sample,"0") || !strcmp(sample,"NULL") ? "6lyz.pdb" : sample, 
+  PDBFilepath = sample,
   NumberOfQBins=2000,
   qMax = 0.9)
-WHEN( strlen(sample) && strcmp(sample,"0") && strcmp(sample,"NULL") )
+WHEN( !flag_sample_sphere )
 AT (0,0,0) RELATIVE sample_stage
 EXTEND %{
   if (!SCATTERED) ABSORB;
