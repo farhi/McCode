@@ -18,7 +18,7 @@ canrun() {
         exit 127;
     fi
 
-    modules="cadquery"
+    modules="numpy"
     cmd=""
     for name in ${modules}; do
         cmd="${cmd}import ${name}; "
