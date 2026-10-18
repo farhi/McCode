@@ -29,6 +29,7 @@ import TwoDView from "./two-d-view/TwoDView";
 import InfoView from "./info-view/InfoView";
 import { usePlotRangeContext } from "../../Contexts/PlotRangeContext";
 import { useSceneContext } from "../../Contexts/SceneContext";
+import { ExportMenu } from "../mcdisplay-export";
 
 const ThreeCanvas = () => {
   const { showXY, showXZ, showYZ, gridSize, gridDivisions, showAxes } =
@@ -413,6 +414,7 @@ const ThreeCanvas = () => {
 
   return (
     <div id="canvas-container">
+      <ExportMenu getRoot={() => sceneRef.current} />
       <canvas id="canvas" ref={containerRef}></canvas>
       <div id="views">
         <div className="view gray-color" id="primaryView" ref={primaryViewRef}>
